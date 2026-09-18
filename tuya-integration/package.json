@@ -1,0 +1,12 @@
+{
+  "name": "tuya-tieu-home-integration",
+  "version": "1.0.0",
+  "description": "Minimal Tuya Cloud API integration test project for Tieu Home (Cong tac quan A Tieu)",
+  "main": "tuya-client.js",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node run-tests.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {}
+}
