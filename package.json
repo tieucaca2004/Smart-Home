@@ -1,0 +1,25 @@
+{
+  "name": "tieu-home-hub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Central Home Hub backend for Tiểu Home — protocol-agnostic Adapter Pattern; Tuya adapter implemented first, with Matter/Zigbee/MQTT/IR/RF to follow.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "lint": "eslint .",
+    "test": "npm run test:unit && npm run test:api",
+    "test:unit": "node test/unit/tuyaAdapter.test.js && node test/unit/adapterRegistry.test.js && node test/unit/normalizeTuyaErrors.test.js && node test/unit/deviceService.test.js",
+    "test:api": "node test/api/devices.routes.test.js",
+    "check-env": "node scripts/check-env.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "^4.22.3"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1"
+  }
+}
