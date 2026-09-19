@@ -38,6 +38,8 @@ src/
                            getDeviceCapabilities() failures carry a protocol-agnostic `.appCode`
                            (AUTH_ERROR, DEVICE_OFFLINE, DEVICE_NOT_FOUND, UPSTREAM_ERROR). Only touches
                            the failure path — success behavior is identical to calling TuyaAdapter directly.
+      TuyaDiscoveryAdapter.js  TuyaAdapter + device discovery: overrides only getDevices() to also list every
+                           device the Tuya Cloud project can see (see "Device discovery"). TuyaAdapter.js is unchanged.
   services/
     deviceService.js       Protocol-agnostic Device Manager used by routes; only talks to
                            AdapterRegistry / DeviceAdapter, never to a specific SDK. Also validates the
@@ -75,6 +77,10 @@ test/
   unit/startupEnv.test.js          `npm start` env loading: boots the Hub with the literal start command in a
                                    throwaway temp dir (dummy credentials, never touches a real .env) —
                                    .env loading, CRLF, env-over-file precedence, missing .env, engines floor.
+  unit/tuyaDiscovery.test.js       TuyaDiscoveryAdapter: paging, merge with TUYA_DEVICE_IDS, field whitelist (no local_key /
+                                   ip / uid), refused discovery falls back, TUYA_DISCOVERY=off. Fake transport.
+  api/discovery.routes.test.js     GET /api/devices end to end with discovery (real stack, fake transport): all devices
+                                   listed, offline kept, per-device routes work for a discovered device, no leaks.
   api/capabilities.routes.test.js  GET /:id/capabilities over HTTP: once with a fake adapter (shape + full
                                    error mapping) and once end-to-end through the REAL TuyaAdapter + error
                                    wrapper on a fake transport, asserting no secret/token/signature can
@@ -245,9 +251,39 @@ this project's baseline, and are classified as `AUTH_ERROR`; anything else is
 matched by keyword or falls back to `UPSTREAM_ERROR`). This classification
 module is intentionally separate from `TuyaAdapter.js`, which is not modified.
 
+## Device discovery
+
+`GET /api/devices` lists every device the Tuya Cloud project can see: the
+Hub calls Tuya's "Batch query for the list of associated App user dimension
+devices" (`GET /v1.0/iot-01/associated-users/devices`, paged) and returns each
+device as `{ id, nativeId, protocol, name, category, online }`. Only those fields
+are copied from Tuya's answer, which also carries the device `local_key`, IP and
+account uid; none of that ever reaches a response.
+
+- It lives in `src/adapters/tuya/TuyaDiscoveryAdapter.js`, a subclass of
+  `TuyaAdapter` that overrides only `getDevices()`. `TuyaAdapter.js` is unchanged,
+  and status / capabilities / commands are inherited as they were.
+- Ids in `TUYA_DEVICE_IDS` are still looked up one by one (the original path) and
+  listed first; a device that is both configured and discovered appears once.
+- Discovery is read-only and best-effort. If Tuya refuses it, the Hub logs
+  `Tuya device discovery failed; ...` with Tuya's reason and lists only the
+  configured devices, as before.
+- `TUYA_DISCOVERY=off` (also `false`, `0`, `no`) turns discovery off.
+
+Check it against your own project (read-only) after starting the Hub:
+
+```bash
+curl http://localhost:3000/api/devices
+```
+
+The number of entries should match the devices linked to the project in the Tuya
+console (Cloud -> project -> Devices). If you still get only your
+`TUYA_DEVICE_IDS`, look for the `discovery failed` line in the Hub's console.
+
 ## Managing multiple devices
 
-Configure as many Tuya device ids as needed, comma-separated, in `.env`:
+With discovery on (the default) nothing needs configuring. To pin devices
+explicitly as well, list their ids comma-separated in `.env`:
 
 ```bash
 TUYA_DEVICE_IDS=1638018234ab950e1ecd,1638018234ab950e241e
@@ -311,15 +347,13 @@ the app: `npm test` and `npm run lint` do not touch `mobile/`.
 
 ## Known limitations (deliberate — not oversights)
 
-- **`GET /api/devices` does not do dynamic discovery.** Tuya's "list all
-  devices" endpoints need a linked App-account uid or space id, and a
-  space-binding mismatch was the actual root cause of this project's
-  earlier `40001900 No space permission` / `1106 permission deny` errors.
-  Calling such an endpoint here has not been live-tested, so `TuyaAdapter`
-  intentionally avoids it. Instead it reads `TUYA_DEVICE_IDS` (comma
-  separated, in `.env`) and calls the already-verified "Query Device
-  Details" endpoint (`GET /v2.0/cloud/thing/{id}`) for each one. Real
-  discovery is a future task, not implemented here.
+- **Device discovery is new and has not been live-tested by this project.**
+  `GET /api/devices` also lists every device the Tuya Cloud project can see, via
+  `GET /v1.0/iot-01/associated-users/devices` (see "Device discovery"). Earlier
+  sprints avoided list endpoints because a space-binding mismatch caused the
+  `40001900 No space permission` / `1106 permission deny` errors; if Tuya refuses
+  the discovery call the Hub logs why and lists `TUYA_DEVICE_IDS` only, exactly as
+  before. Confirm it against your own project with the check under "Device discovery".
 - `GET /:id/status` / `POST /:id/commands` do not check the device id
   against `TUYA_DEVICE_IDS` before calling the adapter — any native id the
   Tuya account can see will be forwarded. This was a deliberate choice this

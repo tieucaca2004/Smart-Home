@@ -1,7 +1,7 @@
 'use strict';
 
 const AdapterRegistry = require('./adapters/AdapterRegistry');
-const TuyaAdapter = require('./adapters/tuya/TuyaAdapter');
+const TuyaDiscoveryAdapter = require('./adapters/tuya/TuyaDiscoveryAdapter');
 const { wrapWithErrorNormalization } = require('./adapters/tuya/normalizeTuyaErrors');
 const DeviceService = require('./services/deviceService');
 
@@ -22,7 +22,9 @@ const DeviceService = require('./services/deviceService');
 function buildDeviceService() {
   const registry = new AdapterRegistry();
 
-  registry.register(wrapWithErrorNormalization(new TuyaAdapter()));
+  // TuyaDiscoveryAdapter = the frozen TuyaAdapter + listing every device the Tuya
+  // Cloud project can see (TUYA_DISCOVERY=off restores the TUYA_DEVICE_IDS-only list).
+  registry.register(wrapWithErrorNormalization(new TuyaDiscoveryAdapter()));
   // Future: registry.register(new MatterAdapter());
   // Future: registry.register(new ZigbeeAdapter());
   // Future: registry.register(new MqttAdapter());

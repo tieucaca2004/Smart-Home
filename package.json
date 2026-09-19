@@ -8,8 +8,8 @@
     "start": "node --env-file=.env src/server.js",
     "lint": "eslint .",
     "test": "npm run test:unit && npm run test:api",
-    "test:unit": "node test/unit/tuyaAdapter.test.js && node test/unit/adapterRegistry.test.js && node test/unit/normalizeTuyaErrors.test.js && node test/unit/deviceService.test.js && node test/unit/tuyaCapabilities.test.js && node test/unit/deviceServiceCapabilities.test.js && node test/unit/startupEnv.test.js",
-    "test:api": "node test/api/devices.routes.test.js && node test/api/capabilities.routes.test.js",
+    "test:unit": "node test/unit/tuyaAdapter.test.js && node test/unit/adapterRegistry.test.js && node test/unit/normalizeTuyaErrors.test.js && node test/unit/deviceService.test.js && node test/unit/tuyaCapabilities.test.js && node test/unit/deviceServiceCapabilities.test.js && node test/unit/startupEnv.test.js && node test/unit/tuyaDiscovery.test.js",
+    "test:api": "node test/api/devices.routes.test.js && node test/api/capabilities.routes.test.js && node test/api/discovery.routes.test.js",
     "check-env": "node scripts/check-env.js"
   },
   "engines": {
