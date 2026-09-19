@@ -21,7 +21,7 @@ class OnlineBadge extends StatelessWidget {
       children: [
         Icon(Icons.circle, size: 10, color: color),
         const SizedBox(width: 6),
-        Text(label, style: TextStyle(color: color)),
+        Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
       ],
     );
   }

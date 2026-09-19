@@ -5,20 +5,16 @@ import '../../../data/hub_api_client.dart';
 import '../../../models/device_capabilities.dart';
 import '../control_messages.dart';
 import '../device_control_controller.dart';
-
-/// The label shown for a control: the Hub's own name for it when there is
-/// one, otherwise its code made readable (`switch_1` becomes `Switch 1`).
-String controlLabel(DeviceFunction function) {
-  final name = function.name;
-  if (name != null) return name;
-  final words = function.code.replaceAll('_', ' ').trim();
-  if (words.isEmpty) return function.code;
-  return '${words[0].toUpperCase()}${words.substring(1)}';
-}
+import '../labels/function_labels.dart';
+import 'section_card.dart';
 
 /// "Điều khiển": one switch per on/off command the device's capabilities
 /// list. It is generated from [controls] (never from a fixed list of codes)
 /// and knows nothing about the protocol behind the Hub.
+///
+/// Each control shows a friendly Vietnamese label as its main text, with the
+/// technical code and type (`switch_1 · Boolean`) as secondary text and the
+/// state the device reports underneath.
 ///
 /// The parent gives it a fresh key whenever the capabilities are reloaded, so
 /// the state below is created once per set of capabilities.
@@ -70,7 +66,12 @@ class _DeviceControlsSectionState extends State<DeviceControlsSection> {
       children: [
         Row(
           children: [
-            Expanded(child: Text('Điều khiển', style: theme.textTheme.titleMedium)),
+            Expanded(
+              child: Text(
+                'Điều khiển',
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
             if (!_offline)
               IconButton(
                 icon: const Icon(Icons.sync),
@@ -84,6 +85,18 @@ class _DeviceControlsSectionState extends State<DeviceControlsSection> {
           listenable: _controller,
           builder: (context, _) {
             final statusError = _controller.statusError;
+            final tiles = <Widget>[];
+            for (final function in widget.controls) {
+              if (tiles.isNotEmpty) tiles.add(const Divider(height: 1));
+              tiles.add(
+                _ToggleTile(
+                  key: ValueKey('control-${function.code}'),
+                  function: function,
+                  controller: _controller,
+                  offline: _offline,
+                ),
+              );
+            }
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -92,13 +105,12 @@ class _DeviceControlsSectionState extends State<DeviceControlsSection> {
                     '$statusUnavailableText '
                     '${describeHubError(statusError, hubUrl: widget.client.baseUrl).title}.',
                   ),
-                for (final function in widget.controls)
-                  _ToggleTile(
-                    key: ValueKey('control-${function.code}'),
-                    function: function,
-                    controller: _controller,
-                    offline: _offline,
+                SectionCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: tiles,
                   ),
+                ),
               ],
             );
           },
@@ -122,6 +134,8 @@ class _ToggleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final code = function.code;
     final value = controller.valueOf(code);
     final pending = controller.isPending(code);
@@ -139,18 +153,38 @@ class _ToggleTile extends StatelessWidget {
     } else {
       state = 'Không rõ trạng thái';
     }
+    final isOn = !pending && !offline && value == true;
 
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(controlLabel(function)),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
         children: [
-          Text('$code · $state'),
-          ?_outcomeText(context, controller.outcomeOf(code)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(functionLabel(function), style: theme.textTheme.titleMedium),
+                const SizedBox(height: 2),
+                Text(
+                  functionTechnicalLine(function),
+                  style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  state,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: isOn ? scheme.primary : scheme.onSurfaceVariant,
+                    fontWeight: isOn ? FontWeight.w600 : null,
+                  ),
+                ),
+                ?_outcomeText(context, controller.outcomeOf(code)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          ?_trailing(pending: pending, firstRead: firstRead, value: value),
         ],
       ),
-      trailing: _trailing(pending: pending, firstRead: firstRead, value: value),
     );
   }
 
@@ -194,17 +228,26 @@ class _ToggleTile extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return switch (outcome) {
       null => null,
-      ControlConfirmed() => Text(
-          'Thiết bị đã xác nhận.',
-          style: TextStyle(color: scheme.primary),
+      ControlConfirmed() => Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            'Thiết bị đã xác nhận.',
+            style: TextStyle(color: scheme.primary),
+          ),
         ),
-      final ControlUnconfirmed unconfirmed => Text(
-          unconfirmedText(unconfirmed),
-          style: TextStyle(color: scheme.tertiary),
+      final ControlUnconfirmed unconfirmed => Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            unconfirmedText(unconfirmed),
+            style: TextStyle(color: scheme.tertiary),
+          ),
         ),
-      ControlFailed(:final error) => Text(
-          commandFailureText(error),
-          style: TextStyle(color: scheme.error),
+      ControlFailed(:final error) => Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            commandFailureText(error),
+            style: TextStyle(color: scheme.error),
+          ),
         ),
     };
   }

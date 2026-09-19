@@ -2,18 +2,24 @@ import 'package:flutter/material.dart';
 
 import 'data/hub_api_client.dart';
 import 'features/devices/device_list_screen.dart';
+import 'features/devices/device_name_store.dart';
 
 const String appTitle = 'Tiểu Home';
 
 ThemeData _theme(Brightness brightness) => ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal, brightness: brightness),
+      appBarTheme: const AppBarTheme(centerTitle: false),
     );
 
 /// The app shell. The first screen is the device list.
+///
+/// [nameStore] is where the names people give their devices live; leave it
+/// out and every device shows the name the Hub reports.
 class TieuHomeApp extends StatelessWidget {
-  const TieuHomeApp({super.key, required this.client});
+  const TieuHomeApp({super.key, required this.client, this.nameStore});
 
   final HubApiClient client;
+  final DeviceNameStore? nameStore;
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +28,7 @@ class TieuHomeApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
-      home: DeviceListScreen(client: client),
+      home: DeviceListScreen(client: client, nameStore: nameStore),
     );
   }
 }

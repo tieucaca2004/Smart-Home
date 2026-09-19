@@ -31,7 +31,40 @@ Zigbee, MQTT, IR, RF, ...) show up without app changes.
 - An offline device (per the Hub) has no switches, only a message; nothing is
   sent to it.
 
-No authentication, storage, scenes or automation (not in scope yet).
+**Sprint 3** — UI/UX polish (no backend, contract or control-logic change):
+
+- **Friendly labels.** A control's main text is Vietnamese, never the vendor's
+  Chinese: `开关1` → `Công tắc 1`, and with no usable name `switch_N` →
+  `Công tắc N`. This is a rule on the capabilities the Hub returns
+  (`features/devices/labels/function_labels.dart`), not a fixed list of three
+  switches, so a device with 1, 2 or 6 switches gets exactly that many.
+- **Technical details are secondary.** Under the label a smaller line shows
+  `switch_1 · Boolean`, and the state (`Đang bật` / `Đang tắt`) under that. The
+  device id, category, protocol and the full command/status lists sit at the
+  bottom in **Thông tin kỹ thuật**.
+- **Device screen hierarchy:** name and `● Trực tuyến` / `Ngoại tuyến` → Điều
+  khiển → Thông tin kỹ thuật. The list shows one card per device.
+- **Device names.** The name the Hub reports (e.g. `W-W603 2`) is the default.
+  `DeviceNameStore` (`features/devices/device_name_store.dart`) is the seam for
+  a name the user chooses (`Công tắc phòng khách`): it changes only what is
+  *shown*, never the device id or any Hub request. The only implementation so
+  far is in-memory (`InMemoryDeviceNameStore`), and there is no rename screen
+  yet; a persistent store (on the phone, later the Hub) is a drop-in that
+  implements the same two methods and is passed to `TieuHomeApp(nameStore: …)`.
+
+**Sprint 3A** — every device the Hub lists (no app logic change; tests only):
+
+- The list and the detail screens were already driven entirely by
+  `GET /api/devices` and the per-device `capabilities` / `status` / `commands`
+  routes, keyed by the chosen device's id. The Hub now returns every device the
+  Tuya Cloud project can see (see the root `README.md`, "Device discovery"), so
+  the app shows all of them, online and offline. No device id, name, category
+  or switch code is built into the app; `test/features/devices/multi_device_test.dart`
+  covers several devices (1, 2 and 12), online / offline / unknown, opening
+  device A then B, commands reaching only the open device, and a source scan
+  that fails if such a literal is added to `lib/`.
+
+No authentication, scenes or automation (not in scope yet).
 
 ## Layout
 
@@ -42,7 +75,8 @@ lib/
   data/                        HubApiClient (the only code that does HTTP), HubApiException
   models/                      Device, DeviceCapabilities, DeviceStatus, ControlKind — parse the Hub's JSON
   core/                        LoadController (loading/success/failure), error wording, state widgets
-  features/devices/            list + detail screens, DeviceControlController, controls section
+  features/devices/            list + detail screens, DeviceControlController, controls section,
+                               labels/ (Vietnamese control labels), device_name_store.dart
 test/                          model, client, controller, config and widget tests
 ```
 

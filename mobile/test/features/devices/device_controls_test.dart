@@ -27,6 +27,21 @@ Finder tile(String code) => find.byKey(ValueKey('control-$code'));
 Finder spinnerIn(String code) =>
     find.descendant(of: tile(code), matching: find.byType(CircularProgressIndicator));
 
+/// Text drawn inside the tile of one control (its label, technical line, ...).
+Finder textIn(String code, String text) =>
+    find.descendant(of: tile(code), matching: find.text(text));
+
+/// True for the tile of any control (keyed `control-<code>`), and nothing else.
+bool isControlTile(Widget widget) {
+  final key = widget.key;
+  return key is ValueKey<String> && key.value.startsWith('control-');
+}
+
+/// The state line ("Đang bật", ...) of one control. Since Sprint 3 it is its own
+/// line under the label; the technical `code · Type` is a separate secondary line.
+Finder stateOf(String code, String text) =>
+    find.descendant(of: tile(code), matching: find.text(text));
+
 bool isOn(WidgetTester tester, String code) => tester.widget<Switch>(toggle(code)).value;
 
 Future<void> pumpDetail(WidgetTester tester, FakeHub hub, {Device device = realDevice}) async {
@@ -66,7 +81,23 @@ void main() {
       for (final code in ['switch_1', 'switch_2', 'switch_3']) {
         expect(toggle(code), findsOneWidget, reason: code);
       }
-      expect(find.text('Switch 1'), findsOneWidget);
+      // Exactly one control tile per Boolean command, and none for the others.
+      expect(find.byWidgetPredicate(isControlTile), findsNWidgets(3));
+      // Sprint 3: each control's label is Vietnamese (this fixture gives no
+      // name, so the switch_N rule applies), and the raw code is secondary text.
+      // The friendly label also appears in the technical lists (commands and
+      // statuses), so it is asserted inside each control's own tile: it must be
+      // that control's main text, exactly once.
+      const labels = {
+        'switch_1': 'Công tắc 1',
+        'switch_2': 'Công tắc 2',
+        'switch_3': 'Công tắc 3',
+      };
+      for (final MapEntry(key: code, value: label) in labels.entries) {
+        expect(textIn(code, label), findsOneWidget, reason: '$code -> $label');
+        expect(textIn(code, '$code · Boolean'), findsOneWidget, reason: '$code technical line');
+        expect(textIn(code, code), findsNothing, reason: '$code is not the main label');
+      }
       // Integer commands are listed but get no switch.
       expect(toggle('countdown_1'), findsNothing);
       expect(find.text('countdown_1'), findsWidgets);
@@ -135,8 +166,9 @@ void main() {
       expect(isOn(tester, 'switch_1'), isTrue);
       expect(isOn(tester, 'switch_2'), isFalse);
       expect(isOn(tester, 'switch_3'), isTrue);
-      expect(find.text('switch_1 · Đang bật'), findsOneWidget);
-      expect(find.text('switch_2 · Đang tắt'), findsOneWidget);
+      expect(stateOf('switch_1', 'Đang bật'), findsOneWidget);
+      expect(stateOf('switch_2', 'Đang tắt'), findsOneWidget);
+      expect(stateOf('switch_3', 'Đang bật'), findsOneWidget);
       expect(hub.calls, ['GET $capabilitiesPath', 'GET $statusPath']);
     });
 
@@ -164,7 +196,7 @@ void main() {
 
       expect(toggle('switch_2'), findsNothing);
       expect(find.byKey(const ValueKey('on-switch_2')), findsOneWidget);
-      expect(find.text('switch_2 · Không rõ trạng thái'), findsOneWidget);
+      expect(stateOf('switch_2', 'Không rõ trạng thái'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('on-switch_2')));
       await tester.pumpAndSettle();
@@ -218,7 +250,7 @@ void main() {
       // switch_1: progress instead of a switch, and a clear label.
       expect(spinnerIn('switch_1'), findsOneWidget);
       expect(toggle('switch_1'), findsNothing);
-      expect(find.text('switch_1 · Đang gửi lệnh…'), findsOneWidget);
+      expect(stateOf('switch_1', 'Đang gửi lệnh…'), findsOneWidget);
       // The others are still usable.
       expect(toggle('switch_2'), findsOneWidget);
       expect(tester.widget<Switch>(toggle('switch_2')).onChanged, isNotNull);
@@ -314,7 +346,7 @@ void main() {
 
       expect(find.text(offlineDeviceNotice), findsOneWidget);
       expect(find.byType(Switch), findsNothing);
-      expect(find.text('switch_1 · Thiết bị ngoại tuyến'), findsOneWidget);
+      expect(stateOf('switch_1', 'Thiết bị ngoại tuyến'), findsOneWidget);
       expect(hub.posts, isEmpty);
       expect(device.commands, isEmpty);
       // It does not present stale values for a device that is not reachable.

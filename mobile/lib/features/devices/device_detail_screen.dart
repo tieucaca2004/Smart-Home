@@ -8,17 +8,30 @@ import '../../data/hub_api_exception.dart';
 import '../../models/control_kind.dart';
 import '../../models/device.dart';
 import '../../models/device_capabilities.dart';
+import 'device_name_store.dart';
+import 'labels/function_labels.dart';
 import 'widgets/device_controls_section.dart';
 import 'widgets/online_badge.dart';
+import 'widgets/section_card.dart';
 
-/// Read-only details of one device. The basic facts come from the list entry
-/// the user tapped; the capabilities are fetched from
-/// `GET /api/devices/:id/capabilities`. There are no controls yet.
+/// One device: who it is and whether it is reachable, its controls, and, last
+/// and in quieter type, the technical details. The basic facts come from the
+/// list entry the user tapped; the capabilities are fetched from
+/// `GET /api/devices/:id/capabilities`.
+///
+/// [nameStore] holds the names the user gave their devices. Without one the
+/// device shows the name the Hub reports.
 class DeviceDetailScreen extends StatefulWidget {
-  const DeviceDetailScreen({super.key, required this.device, required this.client});
+  const DeviceDetailScreen({
+    super.key,
+    required this.device,
+    required this.client,
+    this.nameStore,
+  });
 
   final Device device;
   final HubApiClient client;
+  final DeviceNameStore? nameStore;
 
   @override
   State<DeviceDetailScreen> createState() => _DeviceDetailScreenState();
@@ -26,6 +39,9 @@ class DeviceDetailScreen extends StatefulWidget {
 
 class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   late final LoadController<DeviceCapabilities> _capabilities;
+  InMemoryDeviceNameStore? _ownNames;
+
+  DeviceNameStore get _names => widget.nameStore ?? (_ownNames ??= InMemoryDeviceNameStore());
 
   @override
   void initState() {
@@ -38,6 +54,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   @override
   void dispose() {
     _capabilities.dispose();
+    _ownNames?.dispose();
     super.dispose();
   }
 
@@ -48,7 +65,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(device.displayName),
+        title: const Text('Chi tiết thiết bị'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -58,15 +75,16 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
           if (device.error != null) _LookupErrorBanner(message: device.error!),
-          _InfoRow(label: 'Tên', value: device.displayName),
-          _InfoRow(label: 'Mã thiết bị', value: device.id),
-          _InfoRow(label: 'Loại', value: device.category ?? 'Chưa rõ'),
-          _InfoRow(label: 'Giao thức / nguồn', value: device.protocol),
-          _InfoRow(label: 'Mã gốc', value: device.nativeId),
-          _InfoRow(label: 'Trạng thái', child: OnlineBadge(device.onlineState)),
+          ListenableBuilder(
+            listenable: _names,
+            builder: (context, _) => _DeviceHeader(
+              device: device,
+              name: deviceDisplayName(device, _names),
+            ),
+          ),
           ListenableBuilder(
             listenable: _capabilities,
             builder: (context, _) => switch (_capabilities.state) {
@@ -75,15 +93,31 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             },
           ),
           const SizedBox(height: 24),
-          Text('Khả năng của thiết bị', style: theme.textTheme.titleMedium),
+          Text(
+            'Thông tin kỹ thuật',
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 8),
-          ListenableBuilder(
-            listenable: _capabilities,
-            builder: (context, _) => switch (_capabilities.state) {
-              LoadInProgress() => const LoadingView(compact: true),
-              LoadFailure(:final error) => _buildError(error),
-              LoadSuccess(:final data) => _CapabilitiesView(data),
-            },
+          SectionCard(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _InfoRow(label: 'Mã thiết bị', value: device.id),
+                _InfoRow(label: 'Loại', value: device.category ?? 'Chưa rõ'),
+                _InfoRow(label: 'Giao thức / nguồn', value: device.protocol),
+                _InfoRow(label: 'Mã gốc', value: device.nativeId),
+                const Divider(height: 24),
+                ListenableBuilder(
+                  listenable: _capabilities,
+                  builder: (context, _) => switch (_capabilities.state) {
+                    LoadInProgress() => const LoadingView(compact: true),
+                    LoadFailure(:final error) => _buildError(error),
+                    LoadSuccess(:final data) => _CapabilitiesView(data),
+                  },
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -122,13 +156,65 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   }
 }
 
+/// The device's name, whether it is online, and, when the user renamed it,
+/// the name it came with.
+class _DeviceHeader extends StatelessWidget {
+  const _DeviceHeader({required this.device, required this.name});
+
+  final Device device;
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final originalName = name == device.displayName ? null : device.displayName;
+
+    return SectionCard(
+      padding: const EdgeInsets.all(20),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(Icons.devices_other_outlined, size: 28, color: scheme.onPrimaryContainer),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 6),
+                OnlineBadge(device.onlineState),
+                if (originalName != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tên gốc: $originalName',
+                    style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, this.value, this.child})
-      : assert(value != null || child != null, 'Provide a value or a child');
+  const _InfoRow({required this.label, required this.value});
 
   final String label;
-  final String? value;
-  final Widget? child;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
@@ -146,7 +232,7 @@ class _InfoRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: child ?? SelectableText(value!, style: theme.textTheme.bodyLarge),
+            child: SelectableText(value, style: theme.textTheme.bodyMedium),
           ),
         ],
       ),
@@ -235,6 +321,8 @@ class _FunctionSection extends StatelessWidget {
   }
 }
 
+/// One command or status in the technical list: the friendly label when there
+/// is one (the raw code otherwise), with the code, type and limits beneath.
 class _FunctionTile extends StatelessWidget {
   const _FunctionTile(this.function);
 
@@ -242,7 +330,7 @@ class _FunctionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = function.name;
+    final label = friendlyFunctionLabel(function);
     final details = <String>[
       if (label != null) function.code,
       function.type,
