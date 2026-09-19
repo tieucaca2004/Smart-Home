@@ -1,0 +1,21 @@
+name: tieu_home
+description: "Tieu Home - smart-home control app. Talks to the Tieu Home Hub API, never directly to a device cloud."
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Only third-party package: first-party HTTP client (also gives MockClient for tests).
+  http: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

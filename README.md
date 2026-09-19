@@ -294,6 +294,19 @@ client flow using only what exists now:
    `AUTH_ERROR` (500) as a Hub configuration problem, not a user error.
    `INVALID_*`/`UNKNOWN_PROTOCOL` (400) indicate a client bug.
 
+## Mobile app
+
+`mobile/` contains the Flutter app **Tiểu Home** (Android + iOS). It is a client
+of this Hub's REST API only — it never talks to Tuya or holds any credential.
+Sprint 1 shows the device list (`GET /api/devices`) and a read-only device
+detail (`GET /api/devices/:id/capabilities`); there are no controls yet.
+
+Point it at the Hub with `--dart-define=HUB_BASE_URL=http://<hub-lan-ip>:3000`
+(defaults: `http://10.0.2.2:3000` on the Android emulator,
+`http://localhost:3000` elsewhere). Setup, platform settings and the test
+commands are in [`mobile/README.md`](mobile/README.md). The Hub is unchanged by
+the app: `npm test` and `npm run lint` do not touch `mobile/`.
+
 ## Known limitations (deliberate — not oversights)
 
 - **`GET /api/devices` does not do dynamic discovery.** Tuya's "list all
@@ -332,8 +345,9 @@ client flow using only what exists now:
 - Only the Tuya adapter exists. Matter/Zigbee/MQTT/IR/RF are structural
   placeholders (see `src/bootstrap.js` comments) — no code for them yet, as
   requested.
-- No frontend, no persistence/database, no auth, no push/real-time updates —
-  out of scope for this step. Clients must poll `/status`.
+- No web frontend (the Flutter app in `mobile/` is the only client), no
+  persistence/database, no auth, no push/real-time updates — out of scope for
+  this step. Clients must poll `/status`.
 
 ## Setup
 

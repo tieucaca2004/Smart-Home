@@ -1,0 +1,7 @@
+# Standard Flutter lints. `flutter analyze` treats every issue (including infos) as a failure.
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+include: package:flutter_lints/flutter.yaml
