@@ -69,7 +69,8 @@ function classifyTuyaError(err) {
 
 /**
  * Wraps a DeviceAdapter-shaped instance (in practice, a TuyaAdapter) so
- * getDeviceStatus()/sendCommand() failures carry a normalized `.appCode`.
+ * getDeviceStatus()/sendCommand()/getDeviceCapabilities() failures carry a
+ * normalized `.appCode`.
  * getDevices() is passed through unchanged — it already captures per-device
  * errors internally (see TuyaAdapter.getDevices) rather than throwing.
  *
@@ -98,6 +99,15 @@ function wrapWithErrorNormalization(adapter) {
     async sendCommand(...args) {
       try {
         return await adapter.sendCommand(...args);
+      } catch (err) {
+        if (!err.appCode) err.appCode = classifyTuyaError(err);
+        throw err;
+      }
+    },
+
+    async getDeviceCapabilities(...args) {
+      try {
+        return await adapter.getDeviceCapabilities(...args);
       } catch (err) {
         if (!err.appCode) err.appCode = classifyTuyaError(err);
         throw err;

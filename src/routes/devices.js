@@ -64,6 +64,16 @@ function createDevicesRouter(deviceService) {
     }
   });
 
+  // GET /api/devices/:id/capabilities — what the device can do (read-only)
+  router.get('/:id/capabilities', async (req, res) => {
+    try {
+      const capabilities = await deviceService.getDeviceCapabilities(req.params.id);
+      res.json({ id: req.params.id, capabilities });
+    } catch (err) {
+      res.status(statusCodeFor(err)).json(errorBody(err, req.params.id));
+    }
+  });
+
   // POST /api/devices/:id/commands   body: { code, value }
   // Command shape validation ({ code, value }) is centralized in
   // DeviceService.sendCommand (INVALID_COMMAND) — generic, not Tuya-specific

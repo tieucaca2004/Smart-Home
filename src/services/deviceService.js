@@ -51,6 +51,30 @@ class DeviceService {
   }
 
   /**
+   * Reports what a device can do (command codes it accepts, status codes it
+   * reports), via the owning adapter's getDeviceCapabilities(). Read-only.
+   *
+   * The identity fields (id / protocol / nativeId) always come from the
+   * resolved device id, never from the adapter's own result, so an adapter
+   * can't misreport which device a capabilities record belongs to. Every other
+   * field is passed through exactly as the adapter produced it. Adapter errors
+   * (incl. their `.appCode`) propagate untouched.
+   *
+   * @param {string} deviceId Namespaced id, e.g. "tuya:1638018234ab950e1ecd"
+   */
+  async getDeviceCapabilities(deviceId) {
+    const { protocol, nativeId, adapter } = this.registry.resolve(deviceId);
+    if (typeof adapter.getDeviceCapabilities !== 'function') {
+      const err = new Error(`The "${protocol}" adapter does not support capabilities`);
+      err.appCode = 'UPSTREAM_ERROR';
+      throw err;
+    }
+    const capabilities = await adapter.getDeviceCapabilities(nativeId);
+    const identity = { id: deviceId, protocol, nativeId };
+    return Object.assign({}, identity, capabilities, identity);
+  }
+
+  /**
    * @param {string} deviceId Namespaced id, e.g. "tuya:1638018234ab950e1ecd"
    * @param {string} code Standardized command code, e.g. "switch_1"
    * @param {*} value Standardized command value, e.g. true

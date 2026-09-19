@@ -19,25 +19,32 @@ same signing algorithm and endpoints as an independent module — it does not
 src/
   adapters/
     DeviceAdapter.js      Abstract base class — the contract every adapter must implement:
-                           getDevices(), getDeviceStatus(nativeId), sendCommand(nativeId, code, value)
+                           getDevices(), getDeviceStatus(nativeId), getDeviceCapabilities(nativeId),
+                           sendCommand(nativeId, code, value)
     AdapterRegistry.js     Maps a protocol name ("tuya", later "matter", "zigbee", ...) to its adapter
                            instance. Namespaced device ids ("tuya:abc123") are parsed/validated here,
                            plus a resolve(deviceId) convenience helper -> { protocol, nativeId, adapter }.
     tuya/
       TuyaAdapter.js       Tuya Cloud OpenAPI implementation of DeviceAdapter (HMAC-SHA256 signing,
                            zero third-party HTTP dependency — only Node's built-in https/crypto).
-                           FROZEN this sprint: not modified, live-tested baseline (see below).
+                           Signing, _call(), getDevices(), getDeviceStatus() and sendCommand() are the
+                           FROZEN, live-tested baseline and are unchanged. This sprint only ADDED
+                           getDeviceCapabilities() (read-only) — see "Capabilities" below.
+      normalizeTuyaCapabilities.js  Pure, I/O-free parsing of Tuya's device specification response into
+                           the protocol-neutral capabilities shape (kept OUTSIDE TuyaAdapter.js, like
+                           normalizeTuyaErrors.js).
       normalizeTuyaErrors.js  Tuya-specific error classification, kept OUTSIDE TuyaAdapter.js on
-                           purpose. Wraps a TuyaAdapter instance so getDeviceStatus()/sendCommand()
-                           failures carry a protocol-agnostic `.appCode` (AUTH_ERROR, DEVICE_OFFLINE,
-                           DEVICE_NOT_FOUND, UPSTREAM_ERROR). Only touches the failure path — success
-                           behavior is identical to calling TuyaAdapter directly.
+                           purpose. Wraps a TuyaAdapter instance so getDeviceStatus()/sendCommand()/
+                           getDeviceCapabilities() failures carry a protocol-agnostic `.appCode`
+                           (AUTH_ERROR, DEVICE_OFFLINE, DEVICE_NOT_FOUND, UPSTREAM_ERROR). Only touches
+                           the failure path — success behavior is identical to calling TuyaAdapter directly.
   services/
     deviceService.js       Protocol-agnostic Device Manager used by routes; only talks to
                            AdapterRegistry / DeviceAdapter, never to a specific SDK. Also validates the
                            standardized command shape ({ code, value }) — generic, not Tuya-specific.
   routes/
-    devices.js              Express router: GET /, GET /:id/status, POST /:id/commands. Maps a
+    devices.js              Express router: GET /, GET /:id/status, GET /:id/capabilities,
+                           POST /:id/commands. Maps a
                            service/adapter error's `.appCode`/`.code` to an HTTP status via the shared
                            error taxonomy (see "Errors" below) — no protocol-specific knowledge here.
   app.js                    Express app factory — takes an already-wired DeviceService (dependency
@@ -61,12 +68,22 @@ test/
   api/devices.routes.test.js       In-process HTTP tests of the Express app using a FakeTuyaAdapter —
                                    no network, no real credentials — covers the full error taxonomy's
                                    HTTP status mapping.
+  unit/tuyaCapabilities.test.js    TuyaAdapter.getDeviceCapabilities() request construction, response
+                                   normalization, error tagging via the wrapper, no credential leakage.
+  unit/deviceServiceCapabilities.test.js  DeviceService.getDeviceCapabilities(): routing, identity fields,
+                                   INVALID_DEVICE_ID / UNKNOWN_PROTOCOL, adapter error propagation.
+  api/capabilities.routes.test.js  GET /:id/capabilities over HTTP: once with a fake adapter (shape + full
+                                   error mapping) and once end-to-end through the REAL TuyaAdapter + error
+                                   wrapper on a fake transport, asserting no secret/token/signature can
+                                   appear in any response body.
 ```
+
+The pre-existing test files above (the first five) were not edited this sprint.
 
 ### Why Adapter Pattern
 
 `DeviceAdapter` defines one contract (`getDevices`, `getDeviceStatus`,
-`sendCommand`). `AdapterRegistry` dispatches a namespaced device id like
+`getDeviceCapabilities`, `sendCommand`). `AdapterRegistry` dispatches a namespaced device id like
 `tuya:1638018234ab950e1ecd` to the adapter registered for that protocol.
 Routes and `deviceService` never know or care which protocol a device
 speaks. Adding Matter, Zigbee, MQTT, IR, or RF later means:
@@ -80,13 +97,15 @@ API shape.
 ## API
 
 Device ids in the URL/body are namespaced as `<protocol>:<nativeId>`, e.g.
-`tuya:1638018234ab950e1ecd`. This API shape is unchanged from the previous
-sprint (backward compatible) — only the error responses got more precise.
+`tuya:1638018234ab950e1ecd`. The three pre-existing endpoints are unchanged
+(backward compatible); `GET /api/devices/:id/capabilities` is the only
+addition this sprint.
 
 ```
 GET  /health
 GET  /api/devices
 GET  /api/devices/:id/status
+GET  /api/devices/:id/capabilities
 POST /api/devices/:id/commands      body: { "code": "switch_1", "value": true }
 ```
 
@@ -95,10 +114,92 @@ Example:
 ```bash
 curl http://localhost:3000/api/devices
 curl http://localhost:3000/api/devices/tuya:1638018234ab950e1ecd/status
+curl http://localhost:3000/api/devices/tuya:1638018234ab950e1ecd/capabilities
 curl -X POST http://localhost:3000/api/devices/tuya:1638018234ab950e1ecd/commands \
   -H "Content-Type: application/json" \
   -d '{"code":"switch_1","value":true}'
 ```
+
+### Response shapes
+
+Field values below are **illustrative** (the shapes are taken from the code and
+its tests); real values come from your devices.
+
+`GET /api/devices` — a flat list across all registered adapters. A device whose
+lookup failed is still listed, with an `error` string instead of name/category/online:
+
+```json
+{
+  "devices": [
+    { "id": "tuya:1638018234ab950e1ecd", "nativeId": "1638018234ab950e1ecd", "protocol": "tuya",
+      "name": "Đèn Quán Quầy", "category": "kg", "online": true },
+    { "id": "tuya:some-other-id", "nativeId": "some-other-id", "protocol": "tuya",
+      "error": "Tuya API error on GET /v2.0/cloud/thing/some-other-id: code=... msg=..." }
+  ]
+}
+```
+
+`GET /api/devices/:id/status`:
+
+```json
+{ "id": "tuya:1638018234ab950e1ecd", "status": [ { "code": "switch_1", "value": false } ] }
+```
+
+`POST /api/devices/:id/commands` — `result` is whatever the adapter returns (for
+Tuya, `true` means the cloud accepted the command; re-read status to confirm the
+device's actual state, which is how the baseline was verified):
+
+```json
+{ "id": "tuya:1638018234ab950e1ecd", "code": "switch_1", "value": true, "result": true }
+```
+
+### Capabilities
+
+`GET /api/devices/:id/capabilities` is **read-only**. It reports what the
+protocol itself says the device supports — the hub never invents a capability.
+
+```json
+{
+  "id": "tuya:1638018234ab950e1ecd",
+  "capabilities": {
+    "id": "tuya:1638018234ab950e1ecd",
+    "protocol": "tuya",
+    "nativeId": "1638018234ab950e1ecd",
+    "name": "Đèn Quán Quầy",
+    "category": "kg",
+    "online": true,
+    "commands": [
+      { "code": "switch_1", "type": "Boolean", "name": "Switch 1", "values": {} },
+      { "code": "countdown_1", "type": "Integer", "name": "Countdown 1",
+        "values": { "unit": "s", "min": 0, "max": 86400, "scale": 0, "step": 1 } }
+    ],
+    "statuses": [
+      { "code": "switch_1", "type": "Boolean", "name": "Switch 1", "values": {} }
+    ]
+  }
+}
+```
+
+(The example above is synthetic, shaped after Tuya's documented response. The
+real device's actual specification has not been recorded in this repository.)
+
+| Field | Meaning |
+|---|---|
+| `id`, `protocol`, `nativeId` | Always present; derived by the hub from the requested id, never from the adapter. |
+| `name`, `category`, `online` | Present only when the protocol supplies them; otherwise omitted (not `null`). |
+| `commands[]` | Codes the device accepts via `POST .../commands`. Always an array (may be empty). |
+| `statuses[]` | Codes the device reports via `GET .../status`. Always an array (may be empty). |
+| `commands[].type` / `statuses[].type` | The protocol's own type name, passed through (for Tuya: `Boolean`, `Integer`, `Enum`, …). |
+| `commands[].values` | Parsed constraint object (e.g. `range`, `min`/`max`/`step`/`unit`). `{}` means no constraints; `null` means the protocol sent something that could not be parsed. |
+| `name` / `desc` on an entry | Included only when non-empty. |
+
+How it works for Tuya (`TuyaAdapter.getDeviceCapabilities`): one call to
+`GET /v1.0/iot-03/devices/{id}/specification` (Tuya's "Get the specifications and
+properties of the device", the source of `category`, `commands`, `statuses`),
+plus the already-verified `GET /v2.0/cloud/thing/{id}` "Query Device Details"
+call for `name`/`online`. The details call is best-effort: if it fails, those
+two fields are omitted and the response is still `200`. If the specification
+call fails, the error is normalized (see below). No command is ever sent.
 
 ### Errors
 
@@ -115,8 +216,18 @@ codes, never a raw Tuya error code:
 | 404 | `DEVICE_NOT_FOUND` | the adapter/cloud API reports the device doesn't exist |
 | 409 | `DEVICE_OFFLINE` | the adapter/cloud API reports the device is offline |
 | 500 | `AUTH_ERROR` | the hub's own credential/signing problem at the cloud API — not the caller's fault |
-| 502 | `UPSTREAM_ERROR` (or unclassified) | any other adapter/cloud API failure |
-| 500 | *(no code)* | unexpected internal error in the hub itself |
+| 502 | `UPSTREAM_ERROR` (or unclassified) | any other adapter/cloud API failure — also returned by `/capabilities` when the device's adapter doesn't implement capabilities |
+| 500 | *(no code)* | unexpected internal error in the hub itself (e.g. `GET /api/devices` failing outright) |
+
+The taxonomy is unchanged this sprint; `/status`, `/capabilities` and
+`/commands` all use it identically. Client code should branch on `code`, never
+on the `error` message text. Example (`GET .../capabilities` on a device the
+cloud says is offline → `409`):
+
+```json
+{ "error": "Tuya API error on GET /v1.0/iot-03/devices/x/specification: code=... msg=...",
+  "code": "DEVICE_OFFLINE", "id": "tuya:x" }
+```
 
 For Tuya, `DEVICE_NOT_FOUND`/`DEVICE_OFFLINE`/`AUTH_ERROR` are produced by
 `src/adapters/tuya/normalizeTuyaErrors.js` from Tuya's own error code/message
@@ -149,6 +260,32 @@ unchanged whenever an adapter provides one — `TuyaAdapter` doesn't populate
 `capabilities` yet (it isn't part of "Query Device Details"), but nothing in
 `DeviceService`/routes needs to change when an adapter starts supplying it.
 
+## How a future mobile app should talk to the Hub
+
+The app talks **only** to this Hub's REST API over HTTP/JSON — never to Tuya
+directly, and never holding any Tuya credential (those live only in the Hub's
+`.env`). There is no auth and no TLS in the Hub today, so run it on a trusted
+network (or behind something that adds both) until that's built. A sensible
+client flow using only what exists now:
+
+1. **Discover** — `GET /api/devices` → list of `{ id, name, category, online, ... }`.
+   Treat `id` as an opaque string (`<protocol>:<nativeId>`) and echo it back
+   unchanged in later calls; don't parse or construct it client-side.
+2. **Build the screen** — `GET /api/devices/:id/capabilities` once per device
+   (cache it client-side; it rarely changes). Render a control only for codes
+   present in `commands[]`, and use `type` / `values` to pick the widget
+   (e.g. `Boolean` → switch, `Enum` with `values.range` → picker, `Integer` with
+   `min`/`max`/`step` → slider). Codes in `statuses[]` but not in `commands[]`
+   are read-only.
+3. **Read state** — `GET /api/devices/:id/status`. Poll it; there is no push.
+4. **Act** — `POST /api/devices/:id/commands` with `{ "code", "value" }` using a
+   code from `commands[]` and a value of the matching type. A `200` means the
+   cloud accepted the command; confirm by re-reading status.
+5. **Handle failures by `code`** (see the error table): show "device offline" on
+   `DEVICE_OFFLINE` (409), retry/back off on `UPSTREAM_ERROR` (502), and treat
+   `AUTH_ERROR` (500) as a Hub configuration problem, not a user error.
+   `INVALID_*`/`UNKNOWN_PROTOCOL` (400) indicate a client bug.
+
 ## Known limitations (deliberate — not oversights)
 
 - **`GET /api/devices` does not do dynamic discovery.** Tuya's "list all
@@ -168,11 +305,36 @@ unchanged whenever an adapter provides one — `TuyaAdapter` doesn't populate
   before every status/command call would change the call pattern of the
   already-verified baseline flow. `DEVICE_NOT_FOUND` is therefore reactive
   (based on Tuya's own response), not proactive.
+- **The capabilities endpoint has not been called against the real Tuya
+  cloud yet.** `GET /v1.0/iot-03/devices/{id}/specification` is a documented
+  Tuya endpoint in the same family as the live-verified status/commands calls,
+  and the whole stack is covered by offline tests with a fake transport — but
+  this project has never actually sent that request to Tuya. Your Cloud
+  project may lack the API permission for it, in which case you'd see Tuya
+  `1106 permission deny`, surfaced as `500 AUTH_ERROR`. Verify once with
+  `curl http://localhost:3000/api/devices/tuya:<id>/capabilities` (read-only;
+  it changes no device state) before building UI on top of it.
+- Capability `type` / `values` are in the protocol's own vocabulary (Tuya's
+  `Boolean`/`Integer`/`Enum`/…). The structure is protocol-neutral; the type
+  names are not mapped to a hub-defined vocabulary yet.
+- `POST .../commands` does **not** validate `{code, value}` against the
+  device's capabilities. It never did; capabilities are advisory information
+  for clients, not enforcement. A wrong code/value reaches Tuya and comes back
+  as an upstream error.
+- Capabilities are fetched live on every request — no caching (no persistence
+  layer exists), so each call costs one to two Tuya API calls.
+- The status/commands routes interpolate the native id into the Tuya request
+  path without URL-encoding it (frozen baseline code, deliberately not changed
+  this sprint). Because Express decodes `%2F` in `:id`, a crafted id can alter
+  the path of an authenticated Tuya request. The new `getDeviceCapabilities`
+  does URL-encode it. Combined with there being no auth on the hub (below),
+  don't expose the hub beyond a trusted network. Fixing the frozen methods is
+  a candidate for a future sprint.
 - Only the Tuya adapter exists. Matter/Zigbee/MQTT/IR/RF are structural
   placeholders (see `src/bootstrap.js` comments) — no code for them yet, as
   requested.
-- No frontend, no persistence/database, no auth — out of scope for this
-  step.
+- No frontend, no persistence/database, no auth, no push/real-time updates —
+  out of scope for this step. Clients must poll `/status`.
 
 ## Setup
 
@@ -199,18 +361,24 @@ All automated tests use an injected fake HTTP transport / a `FakeTuyaAdapter`
 project does not touch, and did not need to touch, the Tuya Developer
 Platform or `tuya-package` in any way.
 
-## Verified results (this sprint)
+## Verified results (capabilities sprint)
 
-- `npm install` → OK (no new dependencies added — only Node built-ins and
-  the existing `express`/`eslint`).
+- `npm install` → OK (no new dependencies — only Node built-ins and the
+  existing `express`/`eslint`).
 - `npm run lint` → **PASS** (0 errors/warnings).
-- `npm run test:unit` → **PASS** — 49/49 assertions across 4 files:
+- `npm run test:unit` → **PASS** — 78/78 assertions across 6 files:
   - `tuyaAdapter.test.js` (unchanged, regression check on the frozen baseline) — 11/11
-  - `adapterRegistry.test.js` (new) — 14/14
-  - `normalizeTuyaErrors.test.js` (new) — 11/11
-  - `deviceService.test.js` (new) — 13/13
-- `npm run test:api` → **PASS** — 17/17 assertions (full error-taxonomy HTTP mapping covered).
-- `npm test` (both) → **PASS** — 66/66 total.
-- `npm start` (real server, real credentials) was **not** run in this
-  sandbox — no `TUYA_ACCESS_ID`/`TUYA_ACCESS_SECRET` are available here by
-  design. Run it in your own environment once `.env` is filled in.
+  - `adapterRegistry.test.js` (unchanged) — 14/14
+  - `normalizeTuyaErrors.test.js` (unchanged) — 11/11
+  - `deviceService.test.js` (unchanged) — 13/13
+  - `tuyaCapabilities.test.js` (new) — 21/21
+  - `deviceServiceCapabilities.test.js` (new) — 8/8
+- `npm run test:api` → **PASS** — 34/34 assertions across 2 files:
+  - `devices.routes.test.js` (unchanged) — 17/17
+  - `capabilities.routes.test.js` (new) — 17/17
+- `npm test` (both) → **PASS** — 112/112 total (the previous 66 unchanged and
+  still passing, plus 46 new).
+- Not verified: the capabilities endpoint against the **real** Tuya cloud (see
+  "Known limitations"), and `npm start` with real credentials — no
+  `TUYA_ACCESS_ID`/`TUYA_ACCESS_SECRET` exist in the sandbox where this was
+  developed, by design. Run both in your own environment once `.env` is filled in.

@@ -34,6 +34,30 @@ class DeviceAdapter {
   }
 
   /**
+   * Describes what a device can do, as reported by the protocol itself
+   * (never invented by the hub): which command codes it accepts and which
+   * status codes it reports.
+   *
+   * Contract for implementations — return a plain object:
+   *   {
+   *     nativeId: string,
+   *     protocol: string,
+   *     name?: string, category?: string, online?: boolean,   // only when the protocol supplies them
+   *     commands: Array<{ code: string, type: string, name?: string, desc?: string, values: object|null }>,
+   *     statuses: Array<{ code: string, type: string, name?: string, desc?: string, values: object|null }>
+   *   }
+   * `commands`/`statuses` are always arrays (empty when the protocol reports none).
+   * `type` and `values` stay in the protocol's own vocabulary; `values` is the
+   * parsed constraint object (range/min/max/...), or null if it couldn't be parsed.
+   * Read-only: implementations must not change device state.
+   *
+   * @param {string} nativeId protocol-native device id (without the "protocol:" prefix)
+   */
+  async getDeviceCapabilities(nativeId) {
+    throw new Error(`${this.constructor.name}.getDeviceCapabilities(${nativeId}) not implemented`);
+  }
+
+  /**
    * Sends a single command to a device.
    * @param {string} nativeId
    * @param {string} code

@@ -4,6 +4,7 @@ const https = require('https');
 const crypto = require('crypto');
 const { URL } = require('url');
 const DeviceAdapter = require('../DeviceAdapter');
+const { normalizeTuyaSpecification } = require('./normalizeTuyaCapabilities');
 
 const DEFAULT_BASE_URL = 'https://openapi.tuyaus.com';
 
@@ -227,6 +228,49 @@ class TuyaAdapter extends DeviceAdapter {
   /** GET /v1.0/iot-03/devices/{device_id}/status — verified live against the baseline device. */
   async getDeviceStatus(nativeId) {
     return this._call('GET', `/v1.0/iot-03/devices/${nativeId}/status`);
+  }
+
+  /**
+   * Reports what the device can do, as returned by Tuya — nothing is invented.
+   *
+   * Read-only (two GETs; never a command):
+   *   1. GET /v1.0/iot-03/devices/{device_id}/specification — Tuya's "Get the
+   *      specifications and properties of the device": `category`, `functions`
+   *      (instructions the device accepts) and `status` (data points it reports).
+   *      Same /v1.0/iot-03/devices/{id}/… family as the verified status/commands
+   *      calls, but this endpoint itself has NOT been live-tested in this
+   *      project yet (see README "Known limitations").
+   *   2. GET /v2.0/cloud/thing/{device_id} — the already-verified "Query Device
+   *      Details" call, used only to enrich the result with name / online.
+   *      Best-effort: if it fails, those optional fields are simply omitted.
+   *
+   * A failure of call 1 propagates unchanged (Tuya's `.code` preserved), so the
+   * error normalizer can classify it. The native id is URL-encoded so an id can
+   * never alter the request path.
+   */
+  async getDeviceCapabilities(nativeId) {
+    if (!nativeId) throw new Error('getDeviceCapabilities: nativeId is required');
+    const encodedId = encodeURIComponent(nativeId);
+
+    const spec = normalizeTuyaSpecification(
+      await this._call('GET', `/v1.0/iot-03/devices/${encodedId}/specification`)
+    );
+
+    let detail = null;
+    try {
+      detail = await this._call('GET', `/v2.0/cloud/thing/${encodedId}`);
+    } catch (err) {
+      detail = null; // enrichment only — capabilities are still valid without name/online
+    }
+
+    const capabilities = { nativeId, protocol: this.protocol };
+    if (detail && typeof detail.name === 'string' && detail.name) capabilities.name = detail.name;
+    const category = spec.category || (detail && detail.category);
+    if (typeof category === 'string' && category) capabilities.category = category;
+    if (detail && typeof detail.is_online === 'boolean') capabilities.online = detail.is_online;
+    capabilities.commands = spec.commands;
+    capabilities.statuses = spec.statuses;
+    return capabilities;
   }
 
   /**
