@@ -5,8 +5,10 @@ import '../../core/load_controller.dart';
 import '../../core/widgets/state_views.dart';
 import '../../data/hub_api_client.dart';
 import '../../data/hub_api_exception.dart';
+import '../../models/control_kind.dart';
 import '../../models/device.dart';
 import '../../models/device_capabilities.dart';
+import 'widgets/device_controls_section.dart';
 import 'widgets/online_badge.dart';
 
 /// Read-only details of one device. The basic facts come from the list entry
@@ -45,7 +47,16 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: Text(device.displayName)),
+      appBar: AppBar(
+        title: Text(device.displayName),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Tải lại thiết bị',
+            onPressed: _capabilities.load,
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -56,6 +67,13 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           _InfoRow(label: 'Giao thức / nguồn', value: device.protocol),
           _InfoRow(label: 'Mã gốc', value: device.nativeId),
           _InfoRow(label: 'Trạng thái', child: OnlineBadge(device.onlineState)),
+          ListenableBuilder(
+            listenable: _capabilities,
+            builder: (context, _) => switch (_capabilities.state) {
+              LoadSuccess(:final data) => _buildControls(data),
+              LoadInProgress() || LoadFailure() => const SizedBox.shrink(),
+            },
+          ),
           const SizedBox(height: 24),
           Text('Khả năng của thiết bị', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -68,6 +86,26 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  /// One switch per on/off command the device lists; nothing when it has none.
+  Widget _buildControls(DeviceCapabilities capabilities) {
+    final controls = <DeviceFunction>[
+      for (final function in capabilities.commands)
+        if (controlKindOf(function) == ControlKind.toggle) function,
+    ];
+    if (controls.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: DeviceControlsSection(
+        // A new key per capabilities load: reloading re-reads the status too.
+        key: ObjectKey(capabilities),
+        client: widget.client,
+        deviceId: widget.device.id,
+        controls: controls,
+        online: capabilities.online ?? widget.device.online,
       ),
     );
   }

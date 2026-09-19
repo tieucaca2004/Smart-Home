@@ -298,8 +298,10 @@ client flow using only what exists now:
 
 `mobile/` contains the Flutter app **Tiểu Home** (Android + iOS). It is a client
 of this Hub's REST API only — it never talks to Tuya or holds any credential.
-Sprint 1 shows the device list (`GET /api/devices`) and a read-only device
-detail (`GET /api/devices/:id/capabilities`); there are no controls yet.
+It shows the device list (`GET /api/devices`) and a device detail
+(`GET /api/devices/:id/capabilities`) with on/off switches for the device's
+Boolean commands, sent through `POST /api/devices/:id/commands` and confirmed
+by reading `GET /api/devices/:id/status`.
 
 Point it at the Hub with `--dart-define=HUB_BASE_URL=http://<hub-lan-ip>:3000`
 (defaults: `http://10.0.2.2:3000` on the Android emulator,

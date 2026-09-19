@@ -66,3 +66,55 @@ Map<String, Object?> switchCapabilitiesBody() => {
         ],
       },
     };
+
+/// The real device on the Hub: three switches and three countdown timers.
+const String realDeviceId = switchDeviceId;
+
+const Map<String, Object?> _countdownValues = {
+  'min': 0,
+  'max': 86400,
+  'scale': 0,
+  'step': 1,
+  'unit': 's',
+};
+
+/// A `GET /api/devices/:id/capabilities` body for any device.
+Map<String, Object?> capabilitiesBody(
+  String id, {
+  String protocol = 'tuya',
+  String? name,
+  bool? online,
+  List<Map<String, Object?>> commands = const [],
+}) {
+  final nativeId = id.substring(id.indexOf(':') + 1);
+  return {
+    'id': id,
+    'capabilities': {
+      'id': id,
+      'protocol': protocol,
+      'nativeId': nativeId,
+      'name': ?name,
+      'online': ?online,
+      'commands': commands,
+      'statuses': [
+        for (final command in commands) {...command},
+      ],
+    },
+  };
+}
+
+/// Capabilities of the real W-W603 2: `switch_1..3` (Boolean) and
+/// `countdown_1..3` (Integer, 0-86400).
+Map<String, Object?> realDeviceCapabilitiesBody({bool? online = true}) {
+  return capabilitiesBody(
+    realDeviceId,
+    name: 'W-W603 2',
+    online: online,
+    commands: [
+      for (final n in [1, 2, 3])
+        {'code': 'switch_$n', 'type': 'Boolean', 'values': <String, Object?>{}},
+      for (final n in [1, 2, 3])
+        {'code': 'countdown_$n', 'type': 'Integer', 'values': _countdownValues},
+    ],
+  );
+}

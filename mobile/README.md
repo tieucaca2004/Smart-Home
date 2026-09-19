@@ -6,15 +6,32 @@ cloud and holds no vendor credentials. Its models and screens are
 protocol-neutral, so devices from any adapter the Hub gains later (Matter,
 Zigbee, MQTT, IR, RF, ...) show up without app changes.
 
-## Status: Sprint 1
+## Status
+
+**Sprint 1** — read-only:
 
 - **Thiết bị** — device list from `GET /api/devices`: name, online/offline,
   category, protocol; loading, empty and error states with retry; pull to
   refresh.
 - **Device detail** — id, category, online state, protocol/source, and the
   device's commands/statuses from `GET /api/devices/:id/capabilities`.
-  Read-only: there are no command controls yet.
-- No authentication, storage, scenes or automation (not in scope yet).
+
+**Sprint 2** — on/off control through the Hub:
+
+- **Điều khiển** (on the device detail screen): one switch per *Boolean*
+  command in the device's capabilities. The list comes from the capabilities,
+  not from fixed codes, so any device the Hub describes gets its switches.
+  Integer/Enum commands are still only listed.
+- A switch sends `POST /api/devices/:id/commands` with the Hub's body
+  `{ "code": "<command code>", "value": true | false }`, shows progress on
+  that switch only, then reads `GET /api/devices/:id/status` and shows the
+  value **the device reports** — never the value that was asked for. A failed
+  command shows a Vietnamese error and no success; a command the Hub accepted
+  but the device did not confirm is flagged as unconfirmed.
+- An offline device (per the Hub) has no switches, only a message; nothing is
+  sent to it.
+
+No authentication, storage, scenes or automation (not in scope yet).
 
 ## Layout
 
@@ -23,9 +40,9 @@ lib/
   main.dart, app.dart          entry point, MaterialApp
   config/hub_config.dart       Hub base URL (--dart-define) + per-platform default
   data/                        HubApiClient (the only code that does HTTP), HubApiException
-  models/                      Device, DeviceCapabilities — parse the Hub's JSON
+  models/                      Device, DeviceCapabilities, DeviceStatus, ControlKind — parse the Hub's JSON
   core/                        LoadController (loading/success/failure), error wording, state widgets
-  features/devices/            list screen, detail screen, online badge
+  features/devices/            list + detail screens, DeviceControlController, controls section
 test/                          model, client, controller, config and widget tests
 ```
 
@@ -48,30 +65,16 @@ flutter pub get
 `flutter create` leaves existing files alone; if it did overwrite one of ours,
 restore it with `git checkout -- <file>`.
 
-Then make two edits, because the Hub speaks plain HTTP on the LAN:
+The Hub speaks plain HTTP on the LAN, so the committed platform files already
+contain two settings (keep them if you regenerate the folders):
 
-**Android** — `android/app/src/main/AndroidManifest.xml`. `INTERNET` is only in
-the debug/profile manifests by default, so a release build cannot reach the Hub
-without it:
-
-```xml
-<uses-permission android:name="android.permission.INTERNET"/>
-<application
-    android:usesCleartextTraffic="true"
-    ...>
-```
-
-**iOS** — `ios/Runner/Info.plist`, inside the top-level `<dict>`:
-
-```xml
-<key>NSAppTransportSecurity</key>
-<dict>
-  <key>NSAllowsLocalNetworking</key>
-  <true/>
-</dict>
-<key>NSLocalNetworkUsageDescription</key>
-<string>Tiểu Home cần truy cập mạng nội bộ để kết nối với Hub.</string>
-```
+- **Android** — `android/app/src/main/AndroidManifest.xml` has
+  `<uses-permission android:name="android.permission.INTERNET"/>` (release
+  builds need it explicitly; only debug/profile get it by default) and
+  `android:usesCleartextTraffic="true"` on `<application>` (Android 9+ blocks
+  `http://` otherwise).
+- **iOS** — `ios/Runner/Info.plist` has `NSAppTransportSecurity` →
+  `NSAllowsLocalNetworking` and an `NSLocalNetworkUsageDescription`.
 
 Once the Hub is served over HTTPS, both cleartext allowances can be removed.
 
@@ -113,3 +116,20 @@ flutter build ios --no-codesign --dart-define=HUB_BASE_URL=http://192.168.1.50:3
 The tests use an in-memory fake Hub (`test/support/fake_hub.dart`) with
 response bodies shaped like the real Hub's; they never need a running Hub. The
 production UI never shows sample devices: what you see comes from the Hub.
+
+## Checking the real device (manual, not automated)
+
+The automated tests use a fake Hub. They prove the app sends the Hub's
+documented command body and handles each outcome; they do **not** prove a
+physical device switches. That needs a run against the real Hub:
+
+1. Start the Hub (`npm start` in the repo root, real credentials in `.env`).
+2. Run the app on a phone or emulator that can reach it, with
+   `--dart-define=HUB_BASE_URL=http://<hub-lan-ip>:3000`.
+3. Open the device (`tuya:1638018234ab950e1ecd`, "W-W603 2"): the three
+   switches should match the device's real state.
+4. Turn a switch OFF → ON. Confirm the relay actually clicks / the load powers
+   on, and the app ends on "Thiết bị đã xác nhận." with the switch ON.
+5. Turn it ON → OFF and confirm the same in reverse.
+6. Optional: use the "Đọc lại trạng thái" button after flipping the wall
+   switch by hand; the app should follow the device.

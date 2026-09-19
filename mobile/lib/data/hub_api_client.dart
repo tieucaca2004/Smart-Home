@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/device.dart';
 import '../models/device_capabilities.dart';
+import '../models/device_status.dart';
 import '../models/json_helpers.dart';
 import 'hub_api_exception.dart';
 
@@ -53,6 +54,28 @@ class HubApiClient {
     });
   }
 
+  /// `GET /api/devices/:id/status`
+  Future<DeviceStatus> fetchStatus(String deviceId) async {
+    final body = await _getJson(['api', 'devices', deviceId, 'status']);
+    return _parse('/api/devices/:id/status', () => DeviceStatus.fromJson(body));
+  }
+
+  /// `POST /api/devices/:id/commands` with the Hub's body `{ "code", "value" }`.
+  ///
+  /// Completing normally means the Hub accepted the command, not that the
+  /// device has changed; call [fetchStatus] to see the real state.
+  Future<CommandReceipt> sendCommand(
+    String deviceId, {
+    required String code,
+    required Object? value,
+  }) async {
+    final body = await _postJson(
+      ['api', 'devices', deviceId, 'commands'],
+      {'code': code, 'value': value},
+    );
+    return _parse('/api/devices/:id/commands', () => CommandReceipt.fromJson(body));
+  }
+
   /// Releases the underlying HTTP client, unless it was supplied by the caller.
   void close() {
     if (_ownsClient) _client.close();
@@ -63,17 +86,29 @@ class HubApiClient {
     return _baseUrl.replace(pathSegments: [...prefix, ...segments]);
   }
 
-  Future<Map<String, dynamic>> _getJson(List<String> segments) async {
+  Future<Map<String, dynamic>> _getJson(List<String> segments) => _requestJson(segments);
+
+  Future<Map<String, dynamic>> _postJson(List<String> segments, Object body) {
+    return _requestJson(segments, body: body);
+  }
+
+  /// A GET when [body] is null, otherwise a POST with [body] as JSON.
+  Future<Map<String, dynamic>> _requestJson(List<String> segments, {Object? body}) async {
     final uri = _uri(segments);
-    final response = await _send(uri);
+    final response = await _send(uri, body);
     return _decode(response, uri);
   }
 
-  Future<http.Response> _send(Uri uri) async {
+  Future<http.Response> _send(Uri uri, Object? body) async {
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      if (body != null) 'Content-Type': 'application/json',
+    };
     try {
-      return await _client
-          .get(uri, headers: const {'Accept': 'application/json'})
-          .timeout(timeout);
+      final pending = body == null
+          ? _client.get(uri, headers: headers)
+          : _client.post(uri, headers: headers, body: jsonEncode(body));
+      return await pending.timeout(timeout);
     } on TimeoutException {
       throw HubApiException(
         HubApiErrorKind.timeout,

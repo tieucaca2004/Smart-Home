@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The app talks to the Hub over the network (release builds need this explicitly). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="tieu_home"
+        android:usesCleartextTraffic="true"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

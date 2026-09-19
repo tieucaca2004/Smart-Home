@@ -119,7 +119,13 @@ void main() {
 
     final hub = FakeHub()
       ..respond('/api/devices', devicesBody())
-      ..respond('/api/devices/$switchDeviceId/capabilities', switchCapabilitiesBody());
+      ..respond('/api/devices/$switchDeviceId/capabilities', switchCapabilitiesBody())
+      ..respond('/api/devices/$switchDeviceId/status', {
+        'id': switchDeviceId,
+        'status': [
+          {'code': 'switch_1', 'value': false},
+        ],
+      });
 
     await pumpApp(tester, hub);
     await tester.pumpAndSettle();
@@ -134,8 +140,13 @@ void main() {
     expect(find.text('kg'), findsOneWidget);
     expect(find.text('Trực tuyến'), findsOneWidget);
 
-    // Capabilities fetched for this device only.
-    expect(hub.requests, ['/api/devices', '/api/devices/$switchDeviceId/capabilities']);
+    // Capabilities (and, since Sprint 2, the status behind the controls) are
+    // fetched for this device only.
+    expect(hub.requests, [
+      '/api/devices',
+      '/api/devices/$switchDeviceId/capabilities',
+      '/api/devices/$switchDeviceId/status',
+    ]);
     expect(find.text('Lệnh thiết bị hỗ trợ'), findsOneWidget);
     expect(find.text('countdown_1'), findsOneWidget);
     expect(find.text('Integer · 0–86400 s'), findsOneWidget);
@@ -143,8 +154,9 @@ void main() {
     expect(find.text('mode · Enum · cold / hot'), findsOneWidget);
     expect(find.text('Trạng thái thiết bị báo về'), findsOneWidget);
 
-    // No command controls in this sprint.
-    expect(find.byType(Switch), findsNothing);
+    // Sprint 2: the Boolean command `switch_1` gets a switch (Sprint 1 had no
+    // controls); the Integer and Enum commands still do not.
+    expect(find.byType(Switch), findsOneWidget);
     expect(find.byType(FilledButton), findsNothing);
 
     await tester.pageBack();
