@@ -8,8 +8,9 @@
  *   - are the two values accidentally identical (a common copy/paste mistake)
  *   - do the values have stray quotes/whitespace that would corrupt the signature
  *   - does process.env actually contain these values when a plain `node` process
- *     runs (this project has no dotenv/env-loader, so a value sitting only in
- *     .env is NOT automatically visible to process.env — see explanation below)
+ *     runs (this script is run with plain `node`, which does NOT load .env, so
+ *     an empty process.env here is expected. `npm start` is different: it runs
+ *     `node --env-file=.env src/server.js` and loads .env automatically)
  *   - if process.env values exist, do they match what's declared in .env
  *     (catches a stale/wrong value left exported in the shell, overriding .env)
  *
@@ -99,22 +100,19 @@ if (!envFile) {
     console.log('  (bỏ qua — thiếu 1 hoặc cả 2 giá trị ở bước 1)');
   }
 
-  console.log('\n--- 3) process.env khi chạy trực tiếp bằng "node" (KHÔNG qua dotenv) ---');
+  console.log('\n--- 3) process.env khi chạy trực tiếp bằng "node" (script này KHÔNG tự load .env) ---');
   const idFromEnv = describeEnvVar('TUYA_ACCESS_ID');
   const secretFromEnv = describeEnvVar('TUYA_ACCESS_SECRET');
 
   if (!idFromEnv && !secretFromEnv) {
-    console.log('\n⚠️  QUAN TRỌNG: project này KHÔNG cài "dotenv" và KHÔNG tự động load .env.');
-    console.log('   Việc chỉ điền giá trị vào .env KHÔNG đủ để "npm start" / gọi API thấy được');
-    console.log('   TUYA_ACCESS_ID/TUYA_ACCESS_SECRET, trừ khi anh:');
-    console.log('     (a) tự set biến môi trường trong shell trước khi chạy (ví dụ PowerShell:');
-    console.log('         $env:TUYA_ACCESS_ID="..."; $env:TUYA_ACCESS_SECRET="..."; npm start), hoặc');
-    console.log('     (b) dùng một tool load .env riêng (project hiện chưa có).');
-    console.log('   Nếu lúc anh chạy Hub và gặp lỗi 1004 mà Hub vẫn khởi động được (không báo');
-    console.log('   "Missing Tuya credentials"), nghĩa là lúc đó process.env CÓ giá trị — rất có');
-    console.log('   thể do anh set trong cùng phiên shell đó. Hãy chạy lại chính lệnh anh dùng để');
-    console.log('   khởi động Hub, nhưng thay bằng: node scripts/check-env.js  (cùng cửa sổ shell,');
-    console.log('   không mở terminal mới) để thấy đúng process.env tại thời điểm chạy thật.');
+    console.log('\nℹ️  LƯU Ý: script này chạy bằng "node" thuần nên KHÔNG tự load .env — process.env');
+    console.log('   trống ở đây là bình thường, KHÔNG có nghĩa là "npm start" sẽ thiếu credential.');
+    console.log('   "npm start" hiện chạy "node --env-file=.env src/server.js" (Node >= 20.7) nên');
+    console.log('   TỰ ĐỘNG load .env — không cần set biến môi trường thủ công nữa. Nếu thiếu file');
+    console.log('   .env, Node sẽ báo lỗi ".env: not found" và Hub không khởi động.');
+    console.log('   Lưu ý thứ tự ưu tiên: biến đã được set sẵn trong shell sẽ ĐƯỢC ƯU TIÊN hơn giá trị');
+    console.log('   cùng tên trong .env. Ở lần chạy này shell không có biến TUYA_ACCESS_* nào, nên');
+    console.log('   sẽ không có biến cũ nào che mất .env khi "npm start" chạy từ cùng shell này.');
   } else if (idFromFile && idFromEnv && idFromFile !== idFromEnv) {
     console.log('\n⚠️  QUAN TRỌNG: TUYA_ACCESS_ID trong process.env KHÁC với giá trị trong file .env.');
     console.log('   Có thể một biến môi trường cũ đang được set sẵn trong shell, che mất .env.');

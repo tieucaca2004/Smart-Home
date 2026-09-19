@@ -72,6 +72,9 @@ test/
                                    normalization, error tagging via the wrapper, no credential leakage.
   unit/deviceServiceCapabilities.test.js  DeviceService.getDeviceCapabilities(): routing, identity fields,
                                    INVALID_DEVICE_ID / UNKNOWN_PROTOCOL, adapter error propagation.
+  unit/startupEnv.test.js          `npm start` env loading: boots the Hub with the literal start command in a
+                                   throwaway temp dir (dummy credentials, never touches a real .env) —
+                                   .env loading, CRLF, env-over-file precedence, missing .env, engines floor.
   api/capabilities.routes.test.js  GET /:id/capabilities over HTTP: once with a fake adapter (shape + full
                                    error mapping) and once end-to-end through the REAL TuyaAdapter + error
                                    wrapper on a fake transport, asserting no secret/token/signature can
@@ -201,6 +204,11 @@ call for `name`/`online`. The details call is best-effort: if it fails, those
 two fields are omitted and the response is still `200`. If the specification
 call fails, the error is normalized (see below). No command is ever sent.
 
+**Verification status:** `GET /api/devices/tuya:1638018234ab950e1ecd/capabilities`
+has been called against the **real Tuya cloud** and returned the actual
+capabilities of the real device (W-W603 2). The call is read-only. The example
+response above and the fixtures in the tests remain synthetic.
+
 ### Errors
 
 Error responses are `{ "error": "<message>", "code": "<TAXONOMY_CODE>", "id": "<deviceId>" }`
@@ -305,15 +313,6 @@ client flow using only what exists now:
   before every status/command call would change the call pattern of the
   already-verified baseline flow. `DEVICE_NOT_FOUND` is therefore reactive
   (based on Tuya's own response), not proactive.
-- **The capabilities endpoint has not been called against the real Tuya
-  cloud yet.** `GET /v1.0/iot-03/devices/{id}/specification` is a documented
-  Tuya endpoint in the same family as the live-verified status/commands calls,
-  and the whole stack is covered by offline tests with a fake transport — but
-  this project has never actually sent that request to Tuya. Your Cloud
-  project may lack the API permission for it, in which case you'd see Tuya
-  `1106 permission deny`, surfaced as `500 AUTH_ERROR`. Verify once with
-  `curl http://localhost:3000/api/devices/tuya:<id>/capabilities` (read-only;
-  it changes no device state) before building UI on top of it.
 - Capability `type` / `values` are in the protocol's own vocabulary (Tuya's
   `Boolean`/`Integer`/`Enum`/…). The structure is protocol-neutral; the type
   names are not mapped to a hub-defined vocabulary yet.
@@ -346,6 +345,11 @@ cp .env.example .env   # then fill in your real TUYA_ACCESS_ID / TUYA_ACCESS_SEC
 `.env` is git-ignored. Credentials are never hard-coded — `TuyaAdapter`
 throws immediately if `TUYA_ACCESS_ID` / `TUYA_ACCESS_SECRET` are missing.
 
+Requires **Node.js >= 20.7**. `npm start` loads `.env` using Node's built-in
+`--env-file` flag (there is no `dotenv` dependency), which is why a recent Node
+is needed: `--env-file` does not exist before 20.6, and on 20.6.x it lets the
+file override real environment variables, which changed in 20.7.
+
 ## Running
 
 ```bash
@@ -353,32 +357,52 @@ npm run lint        # ESLint (eslint:recommended)
 npm test            # unit + API tests — no network, no real credentials needed
 npm run test:unit   # TuyaAdapter offline unit tests only
 npm run test:api    # Express route tests only (FakeTuyaAdapter)
-npm start           # starts the real server on PORT (default 3000) — needs real Tuya credentials
+npm start           # node --env-file=.env src/server.js — loads .env, then starts the real server
+                    # on PORT (default 3000); needs real Tuya credentials in .env
 ```
+
+How `npm start` handles `.env`:
+
+- `PORT`, `TUYA_ACCESS_ID`, `TUYA_ACCESS_SECRET`, `TUYA_ENDPOINT` and
+  `TUYA_DEVICE_IDS` are read from `.env` in the project root automatically.
+  Previously `.env` was **not** loaded by `npm start`, so `PORT` and
+  `TUYA_DEVICE_IDS` in it were silently ignored; they now take effect.
+- If `.env` does not exist, Node refuses to start (`.env: not found`) rather
+  than running half-configured — create it from `.env.example` first. To run
+  with real environment variables only (e.g. a container with no `.env` file),
+  start the entry point directly: `node src/server.js`.
+- A variable that is already set in the shell/process environment **wins** over
+  the same key in `.env`. A stale `TUYA_ACCESS_SECRET` exported in your shell
+  will therefore silently shadow `.env`; `node scripts/check-env.js` reports
+  a shell-vs-file mismatch.
 
 All automated tests use an injected fake HTTP transport / a `FakeTuyaAdapter`
 — they never call the real Tuya API and never toggle the real device. This
 project does not touch, and did not need to touch, the Tuya Developer
 Platform or `tuya-package` in any way.
 
-## Verified results (capabilities sprint)
+## Verified results (capabilities + startup sprints)
 
 - `npm install` → OK (no new dependencies — only Node built-ins and the
   existing `express`/`eslint`).
 - `npm run lint` → **PASS** (0 errors/warnings).
-- `npm run test:unit` → **PASS** — 78/78 assertions across 6 files:
+- `npm run test:unit` → **PASS** — 87/87 assertions across 7 files:
   - `tuyaAdapter.test.js` (unchanged, regression check on the frozen baseline) — 11/11
   - `adapterRegistry.test.js` (unchanged) — 14/14
   - `normalizeTuyaErrors.test.js` (unchanged) — 11/11
   - `deviceService.test.js` (unchanged) — 13/13
   - `tuyaCapabilities.test.js` (new) — 21/21
   - `deviceServiceCapabilities.test.js` (new) — 8/8
+  - `startupEnv.test.js` (new, `npm start` env loading) — 9/9
 - `npm run test:api` → **PASS** — 34/34 assertions across 2 files:
   - `devices.routes.test.js` (unchanged) — 17/17
   - `capabilities.routes.test.js` (new) — 17/17
-- `npm test` (both) → **PASS** — 112/112 total (the previous 66 unchanged and
-  still passing, plus 46 new).
-- Not verified: the capabilities endpoint against the **real** Tuya cloud (see
-  "Known limitations"), and `npm start` with real credentials — no
-  `TUYA_ACCESS_ID`/`TUYA_ACCESS_SECRET` exist in the sandbox where this was
-  developed, by design. Run both in your own environment once `.env` is filled in.
+- `npm test` (both) → **PASS** — 121/121 total (the 112 from before unchanged and
+  still passing, plus 9 new for startup env loading).
+- Verified against the **real** Tuya cloud (outside the development sandbox):
+  `GET /api/devices/tuya:1638018234ab950e1ecd/capabilities` returned the real
+  device's (W-W603 2) actual capabilities.
+- Not verified in the sandbox: `npm start` with real credentials — no
+  `TUYA_ACCESS_ID`/`TUYA_ACCESS_SECRET` exist there, by design (the startup
+  tests use dummy credentials only). Run it in your own environment once `.env`
+  is filled in.
