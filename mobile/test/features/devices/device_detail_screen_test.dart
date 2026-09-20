@@ -5,6 +5,7 @@ import 'package:tieu_home/models/device.dart';
 
 import '../../support/fake_hub.dart';
 import '../../support/fixtures.dart';
+import '../../support/ui_helpers.dart';
 
 Future<void> pumpDetail(WidgetTester tester, FakeHub hub, Device device) async {
   tester.view.physicalSize = const Size(800, 1800);
@@ -41,6 +42,7 @@ void main() {
 
     await pumpDetail(tester, hub, lamp);
     await tester.pumpAndSettle();
+    await expandTechnicalInfo(tester);
 
     expect(find.text('Đèn phòng khách'), findsWidgets);
     expect(find.text(lampDeviceId), findsOneWidget);
@@ -61,6 +63,7 @@ void main() {
 
     await pumpDetail(tester, hub, lamp);
     await tester.pumpAndSettle();
+    await expandTechnicalInfo(tester);
 
     // The basics are still there, with the error next to them.
     expect(find.text(lampDeviceId), findsOneWidget);
@@ -94,6 +97,7 @@ void main() {
 
     await pumpDetail(tester, hub, broken);
     await tester.pumpAndSettle();
+    await expandTechnicalInfo(tester);
 
     expect(find.textContaining('Upstream lookup failed'), findsOneWidget);
     expect(find.text('Không rõ'), findsOneWidget);

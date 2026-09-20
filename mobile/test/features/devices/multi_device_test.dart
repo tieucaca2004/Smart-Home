@@ -8,6 +8,7 @@ import 'package:tieu_home/features/devices/control_messages.dart';
 
 import '../../support/fake_hub.dart';
 import '../../support/fixtures.dart';
+import '../../support/ui_helpers.dart';
 
 // Sprint 3A: the app shows whatever GET /api/devices returns, and every device
 // screen works from the id of the device that was chosen. Nothing here uses the
@@ -149,7 +150,7 @@ String pathOf(http.Request request) => Uri.decodeComponent(request.url.path);
 
 void main() {
   group('the device list shows what the Hub returns', () {
-    testWidgets('every device, with its name, category, protocol and online state', (tester) async {
+    testWidgets('every device, with its name, type and online state', (tester) async {
       final (hub, _) = buildHub([gang, fan, plug, sensor]);
 
       await pumpApp(tester, hub);
@@ -158,10 +159,15 @@ void main() {
       for (final name in ['Công tắc phòng khách', 'Quạt trần', 'Ổ cắm bếp', 'Cảm biến cửa']) {
         expect(find.text(name), findsOneWidget, reason: name);
       }
-      expect(find.text('kg · tuya'), findsOneWidget);
-      expect(find.text('fs · tuya'), findsOneWidget);
-      expect(find.text('cz · tuya'), findsOneWidget);
-      expect(find.text('mcs · tuya'), findsOneWidget);
+      // Sprint 4: the type is shown in words, not as the raw category and
+      // protocol ("kg · tuya"), which now live on the device's own screen.
+      expect(find.text('Công tắc'), findsOneWidget);
+      expect(find.text('Quạt'), findsOneWidget);
+      expect(find.text('Ổ cắm'), findsOneWidget);
+      expect(find.text('Cửa'), findsOneWidget);
+      for (final raw in ['kg · tuya', 'fs · tuya', 'cz · tuya', 'mcs · tuya']) {
+        expect(find.text(raw), findsNothing, reason: raw);
+      }
       // Three are online, one is offline, and the list tells them apart.
       expect(find.text('Trực tuyến'), findsNWidgets(3));
       expect(find.text('Ngoại tuyến'), findsOneWidget);
@@ -251,6 +257,7 @@ void main() {
 
       await pumpApp(tester, hub);
       await openDevice(tester, gang.name!);
+      await expandTechnicalInfo(tester);
 
       expect(hub.requests, ['/api/devices', capsPath(gang), statusPath(gang)]);
       expect(find.text(gang.id), findsOneWidget);
@@ -273,6 +280,7 @@ void main() {
       await openDevice(tester, gang.name!);
       await goBack(tester);
       await openDevice(tester, fan.name!);
+      await expandTechnicalInfo(tester);
 
       expect(hub.requests, [
         '/api/devices',
@@ -395,6 +403,7 @@ void main() {
 
       await pumpApp(tester, hub);
       await openDevice(tester, sensor.name!);
+      await expandTechnicalInfo(tester);
 
       expect(find.text(sensor.name!), findsOneWidget);
       expect(find.text('Điều khiển'), findsNothing);

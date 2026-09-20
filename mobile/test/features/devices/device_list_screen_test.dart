@@ -7,6 +7,7 @@ import 'package:tieu_home/app.dart';
 
 import '../../support/fake_hub.dart';
 import '../../support/fixtures.dart';
+import '../../support/ui_helpers.dart';
 
 Future<void> pumpApp(WidgetTester tester, FakeHub hub) async {
   await tester.pumpWidget(TieuHomeApp(client: hub.apiClient()));
@@ -31,24 +32,31 @@ void main() {
     expect(hub.requests, ['/api/devices']);
   });
 
-  testWidgets('lists each device with name, type, protocol and online state', (tester) async {
+  testWidgets('lists each device with name, type and online state', (tester) async {
     final hub = FakeHub()..respond('/api/devices', devicesBody());
 
     await pumpApp(tester, hub);
     await tester.pumpAndSettle();
 
+    // Sprint 4: the card shows the device's type in words ("Công tắc") where
+    // Sprint 3 showed the raw category and protocol ("kg · tuya").
     expect(find.text('W-W603 2'), findsOneWidget);
-    expect(find.text('kg · tuya'), findsOneWidget);
+    expect(find.text('Công tắc'), findsOneWidget);
     expect(find.text('Trực tuyến'), findsOneWidget);
 
     expect(find.text('Đèn phòng khách'), findsOneWidget);
-    expect(find.text('light · matter'), findsOneWidget);
+    expect(find.text('Đèn'), findsOneWidget);
     expect(find.text('Ngoại tuyến'), findsOneWidget);
 
     // The device whose lookup failed is still listed, by its native id.
     expect(find.text('broken'), findsOneWidget);
-    expect(find.text('Không lấy được thông tin thiết bị · tuya'), findsOneWidget);
+    expect(find.text('Không lấy được thông tin thiết bị'), findsOneWidget);
     expect(find.text('Không rõ'), findsOneWidget);
+
+    // The technical facts are for the device's own screen, not the card.
+    for (final raw in ['kg · tuya', 'light · matter', 'kg', 'tuya', 'matter', 'light']) {
+      expect(find.text(raw), findsNothing, reason: raw);
+    }
   });
 
   testWidgets('shows an empty state when the Hub has no devices', (tester) async {
@@ -131,6 +139,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('W-W603 2'));
     await tester.pumpAndSettle();
+    await expandTechnicalInfo(tester);
 
     // Basic facts from the list entry.
     expect(find.text('Mã thiết bị'), findsOneWidget);

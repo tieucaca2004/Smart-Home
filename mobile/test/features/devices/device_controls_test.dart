@@ -8,6 +8,7 @@ import 'package:tieu_home/models/device.dart';
 
 import '../../support/fake_hub.dart';
 import '../../support/fixtures.dart';
+import '../../support/ui_helpers.dart';
 
 const String capabilitiesPath = '/api/devices/$realDeviceId/capabilities';
 const String statusPath = '/api/devices/$realDeviceId/status';
@@ -100,6 +101,7 @@ void main() {
       }
       // Integer commands are listed but get no switch.
       expect(toggle('countdown_1'), findsNothing);
+      await expandTechnicalInfo(tester);
       expect(find.text('countdown_1'), findsWidgets);
     });
 
@@ -334,6 +336,27 @@ void main() {
       expect(find.textContaining('không đọc lại được trạng thái để xác nhận'), findsOneWidget);
       expect(find.text('Thiết bị đã xác nhận.'), findsNothing);
       expect(isOn(tester, 'switch_1'), isFalse);
+    });
+  });
+
+  group('accessibility', () {
+    testWidgets('a switch carries its control\'s Vietnamese label for screen readers', (tester) async {
+      final handle = tester.ensureSemantics();
+      final (hub, _) = realHub(state: {'switch_1': true, 'switch_2': false, 'switch_3': true});
+
+      await pumpDetail(tester, hub);
+      await tester.pumpAndSettle();
+
+      const labels = {
+        'switch_1': 'Công tắc 1',
+        'switch_2': 'Công tắc 2',
+        'switch_3': 'Công tắc 3',
+      };
+      for (final MapEntry(key: code, value: label) in labels.entries) {
+        expect(tester.getSemantics(toggle(code)).label, label, reason: code);
+      }
+
+      handle.dispose();
     });
   });
 

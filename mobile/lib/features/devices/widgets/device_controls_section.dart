@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/hub_error_message.dart';
+import '../../../core/theme/app_palette.dart';
+import '../../../core/theme/app_tokens.dart';
 import '../../../data/hub_api_client.dart';
 import '../../../models/device_capabilities.dart';
 import '../control_messages.dart';
 import '../device_control_controller.dart';
 import '../labels/function_labels.dart';
-import 'section_card.dart';
+import 'section_title.dart';
 
 /// "Điều khiển": one switch per on/off command the device's capabilities
 /// list. It is generated from [controls] (never from a fixed list of codes)
@@ -60,34 +62,28 @@ class _DeviceControlsSectionState extends State<DeviceControlsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Điều khiển',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-              ),
-            ),
-            if (!_offline)
-              IconButton(
-                icon: const Icon(Icons.sync),
-                tooltip: 'Đọc lại trạng thái',
-                onPressed: _controller.loadStatus,
-              ),
-          ],
+        SectionTitle(
+          'Điều khiển',
+          trailing: _offline
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.sync_rounded),
+                  tooltip: 'Đọc lại trạng thái',
+                  onPressed: _controller.loadStatus,
+                ),
         ),
-        if (_offline) const _Notice(offlineDeviceNotice),
+        const SizedBox(height: AppSpacing.sm),
+        if (_offline) const _Notice(offlineDeviceNotice, tone: _NoticeTone.offline),
         ListenableBuilder(
           listenable: _controller,
           builder: (context, _) {
             final statusError = _controller.statusError;
             final tiles = <Widget>[];
             for (final function in widget.controls) {
-              if (tiles.isNotEmpty) tiles.add(const Divider(height: 1));
+              if (tiles.isNotEmpty) tiles.add(const SizedBox(height: AppSpacing.md));
               tiles.add(
                 _ToggleTile(
                   key: ValueKey('control-${function.code}'),
@@ -98,19 +94,15 @@ class _DeviceControlsSectionState extends State<DeviceControlsSection> {
               );
             }
             return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (statusError != null)
                   _Notice(
                     '$statusUnavailableText '
                     '${describeHubError(statusError, hubUrl: widget.client.baseUrl).title}.',
+                    tone: _NoticeTone.warning,
                   ),
-                SectionCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: tiles,
-                  ),
-                ),
+                ...tiles,
               ],
             );
           },
@@ -120,6 +112,12 @@ class _DeviceControlsSectionState extends State<DeviceControlsSection> {
   }
 }
 
+/// One control: a card with a power icon, the label, the state the device
+/// reports, the technical code as quiet secondary text, and the switch.
+///
+/// It looks different in each state so none needs reading to be understood:
+/// on is tinted, off is neutral, pending shows a spinner in place of the
+/// switch, offline is muted with no switch at all.
 class _ToggleTile extends StatelessWidget {
   const _ToggleTile({
     super.key,
@@ -155,21 +153,27 @@ class _ToggleTile extends StatelessWidget {
     }
     final isOn = !pending && !offline && value == true;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    return AnimatedContainer(
+      duration: AppMotion.fast,
+      curve: Curves.easeOut,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: isOn ? scheme.primaryContainer.withValues(alpha: 0.5) : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(
+          color: isOn ? scheme.primary.withValues(alpha: 0.35) : scheme.outlineVariant,
+        ),
+      ),
       child: Row(
         children: [
+          _PowerIcon(on: isOn, muted: offline),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(functionLabel(function), style: theme.textTheme.titleMedium),
                 const SizedBox(height: 2),
-                Text(
-                  functionTechnicalLine(function),
-                  style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-                ),
-                const SizedBox(height: 6),
                 Text(
                   state,
                   style: theme.textTheme.bodyMedium?.copyWith(
@@ -178,10 +182,15 @@ class _ToggleTile extends StatelessWidget {
                   ),
                 ),
                 ?_outcomeText(context, controller.outcomeOf(code)),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  functionTechnicalLine(function),
+                  style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                ),
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppSpacing.md),
           ?_trailing(pending: pending, firstRead: firstRead, value: value),
         ],
       ),
@@ -193,16 +202,23 @@ class _ToggleTile extends StatelessWidget {
     if (offline) return null;
     if (pending || (firstRead && value == null)) {
       return const SizedBox(
-        width: 24,
-        height: 24,
-        child: CircularProgressIndicator(strokeWidth: 2),
+        width: 28,
+        height: 28,
+        child: CircularProgressIndicator(strokeWidth: 2.5),
       );
     }
     if (value is bool) {
-      return Switch(
-        key: ValueKey('toggle-$code'),
-        value: value,
-        onChanged: (next) => controller.setValue(code, next),
+      // A larger switch: this is what the person came here to press.
+      return Transform.scale(
+        scale: 1.15,
+        child: Semantics(
+          label: functionLabel(function),
+          child: Switch(
+            key: ValueKey('toggle-$code'),
+            value: value,
+            onChanged: (next) => controller.setValue(code, next),
+          ),
+        ),
       );
     }
     // The device has not reported this code, so a switch would have to guess
@@ -226,48 +242,107 @@ class _ToggleTile extends StatelessWidget {
 
   Widget? _outcomeText(BuildContext context, ControlOutcome? outcome) {
     final scheme = Theme.of(context).colorScheme;
+    final palette = AppPalette.of(context);
+    final style = Theme.of(context).textTheme.bodySmall;
     return switch (outcome) {
       null => null,
       ControlConfirmed() => Padding(
-          padding: const EdgeInsets.only(top: 4),
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
           child: Text(
             'Thiết bị đã xác nhận.',
-            style: TextStyle(color: scheme.primary),
+            style: style?.copyWith(color: palette.onSuccessContainer),
           ),
         ),
       final ControlUnconfirmed unconfirmed => Padding(
-          padding: const EdgeInsets.only(top: 4),
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
           child: Text(
             unconfirmedText(unconfirmed),
-            style: TextStyle(color: scheme.tertiary),
+            style: style?.copyWith(color: palette.onWarningContainer),
           ),
         ),
       ControlFailed(:final error) => Padding(
-          padding: const EdgeInsets.only(top: 4),
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
           child: Text(
             commandFailureText(error),
-            style: TextStyle(color: scheme.error),
+            style: style?.copyWith(color: scheme.error),
           ),
         ),
     };
   }
 }
 
-/// A warning card shown above the controls.
-class _Notice extends StatelessWidget {
-  const _Notice(this.text);
+/// The round power icon at the start of a control: filled when on.
+class _PowerIcon extends StatelessWidget {
+  const _PowerIcon({required this.on, required this.muted});
 
-  final String text;
+  final bool on;
+  final bool muted;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
-      color: scheme.errorContainer,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Text(text, style: TextStyle(color: scheme.onErrorContainer)),
+    return AnimatedContainer(
+      duration: AppMotion.fast,
+      width: 44,
+      height: 44,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: on ? scheme.primary : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppRadius.md - 2),
+      ),
+      child: Icon(
+        Icons.power_settings_new_rounded,
+        size: 24,
+        color: on
+            ? scheme.onPrimary
+            : (muted ? scheme.outline : scheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+enum _NoticeTone { offline, warning }
+
+/// A notice shown above the controls: the device is offline, or its status
+/// could not be read.
+class _Notice extends StatelessWidget {
+  const _Notice(this.text, {required this.tone});
+
+  final String text;
+  final _NoticeTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = AppPalette.of(context);
+    final (background, foreground, icon) = switch (tone) {
+      _NoticeTone.offline => (
+          palette.offlineContainer,
+          palette.onOfflineContainer,
+          Icons.wifi_off_rounded,
+        ),
+      _NoticeTone.warning => (
+          palette.warningContainer,
+          palette.onWarningContainer,
+          Icons.info_outline_rounded,
+        ),
+    };
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: foreground),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(text, style: theme.textTheme.bodyMedium?.copyWith(color: foreground)),
+          ),
+        ],
       ),
     );
   }

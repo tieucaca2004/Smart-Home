@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'core/branding.dart';
+import 'core/theme/app_theme.dart';
+import 'core/theme/app_tokens.dart';
 import 'data/hub_api_client.dart';
 import 'features/devices/device_list_screen.dart';
 import 'features/devices/device_name_store.dart';
-
-const String appTitle = 'Tiểu Home';
-
-ThemeData _theme(Brightness brightness) => ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal, brightness: brightness),
-      appBarTheme: const AppBarTheme(centerTitle: false),
-    );
 
 /// The app shell. The first screen is the device list.
 ///
@@ -26,8 +22,8 @@ class TieuHomeApp extends StatelessWidget {
     return MaterialApp(
       title: appTitle,
       debugShowCheckedModeBanner: false,
-      theme: _theme(Brightness.light),
-      darkTheme: _theme(Brightness.dark),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
       home: DeviceListScreen(client: client, nameStore: nameStore),
     );
   }
@@ -45,11 +41,12 @@ class ConfigErrorApp extends StatelessWidget {
     return MaterialApp(
       title: appTitle,
       debugShowCheckedModeBanner: false,
-      theme: _theme(Brightness.light),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
       home: Scaffold(
         appBar: AppBar(title: const Text('Cấu hình sai')),
         body: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(AppSpacing.screen),
           child: SelectableText(message),
         ),
       ),

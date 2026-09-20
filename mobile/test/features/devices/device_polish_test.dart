@@ -10,6 +10,7 @@ import 'package:tieu_home/models/device.dart';
 
 import '../../support/fake_hub.dart';
 import '../../support/fixtures.dart';
+import '../../support/ui_helpers.dart';
 
 // Sprint 3: what a person sees on the screens. The Hub here answers the way
 // the real one does for the W-W603 2: Chinese names (开关1 ...) next to the
@@ -147,6 +148,7 @@ void main() {
       final (hub, _) = hubServing(chineseCapabilities());
 
       await pumpDetail(tester, hub);
+      await expandTechnicalInfo(tester);
 
       expect(find.text('Thông tin kỹ thuật'), findsOneWidget);
       // Commands and statuses both list the timers, with code, type and limits.
@@ -241,6 +243,7 @@ void main() {
       final (hub, _) = hubServing(chineseCapabilities());
 
       await pumpDetail(tester, hub);
+      await expandTechnicalInfo(tester);
 
       final technical = tester.getTopLeft(find.text('Thông tin kỹ thuật')).dy;
       for (final text in [realDeviceId, 'tuya', 'kg', '1638018234ab950e1ecd']) {
@@ -424,6 +427,7 @@ void main() {
 
       await tester.tap(find.text('Công tắc phòng khách'));
       await tester.pumpAndSettle();
+      await expandTechnicalInfo(tester);
 
       // Detail: custom name as the title, the original name kept visible.
       expect(find.text('Công tắc phòng khách'), findsOneWidget);

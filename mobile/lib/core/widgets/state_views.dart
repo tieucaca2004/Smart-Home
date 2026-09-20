@@ -1,18 +1,41 @@
 import 'package:flutter/material.dart';
 
-/// Centered spinner shown while a screen or section is loading.
+import '../theme/app_tokens.dart';
+
+/// Centered spinner shown while a screen or section is loading, with an
+/// optional line saying what is loading.
 class LoadingView extends StatelessWidget {
-  const LoadingView({super.key, this.compact = false});
+  const LoadingView({super.key, this.compact = false, this.message});
 
   /// Inline (inside a scrolling list) rather than filling the screen.
   final bool compact;
 
+  final String? message;
+
   @override
   Widget build(BuildContext context) {
-    const spinner = Center(child: CircularProgressIndicator());
+    final theme = Theme.of(context);
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(
+          width: 32,
+          height: 32,
+          child: CircularProgressIndicator(strokeWidth: 3),
+        ),
+        if (message != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            message!,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ],
+      ],
+    );
     return compact
-        ? const Padding(padding: EdgeInsets.all(24), child: spinner)
-        : spinner;
+        ? Padding(padding: const EdgeInsets.all(AppSpacing.xl), child: Center(child: content))
+        : Center(child: content);
   }
 }
 
@@ -38,28 +61,38 @@ class ErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final content = Padding(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(compact ? AppSpacing.lg : AppSpacing.xl),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.cloud_off_outlined, size: compact ? 32 : 48, color: theme.colorScheme.error),
-          const SizedBox(height: 12),
+          _IconBubble(
+            icon: Icons.cloud_off_rounded,
+            background: scheme.errorContainer,
+            foreground: scheme.onErrorContainer,
+            size: compact ? 48 : 64,
+          ),
+          const SizedBox(height: AppSpacing.lg),
           Text(title, textAlign: TextAlign.center, style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(hint, textAlign: TextAlign.center),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            hint,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+          ),
           if (detail != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             SelectableText(
               detail!,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+              style: theme.textTheme.bodySmall?.copyWith(color: scheme.outline),
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.xl),
           FilledButton.icon(
             onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh_rounded),
             label: const Text('Thử lại'),
           ),
         ],
@@ -85,28 +118,64 @@ class EmptyView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Center(
       child: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(AppSpacing.xl),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.devices_other_outlined, size: 48, color: theme.colorScheme.outline),
-              const SizedBox(height: 12),
+              _IconBubble(
+                icon: Icons.devices_other_rounded,
+                background: scheme.primaryContainer,
+                foreground: scheme.onPrimaryContainer,
+                size: 64,
+              ),
+              const SizedBox(height: AppSpacing.lg),
               Text(title, textAlign: TextAlign.center, style: theme.textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Text(hint, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                hint,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: AppSpacing.xl),
               OutlinedButton.icon(
                 onPressed: onReload,
-                icon: const Icon(Icons.refresh),
+                icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Tải lại'),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A round tinted badge holding one icon: the illustration of a state view.
+class _IconBubble extends StatelessWidget {
+  const _IconBubble({
+    required this.icon,
+    required this.background,
+    required this.foreground,
+    required this.size,
+  });
+
+  final IconData icon;
+  final Color background;
+  final Color foreground;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: background, shape: BoxShape.circle),
+      child: Icon(icon, size: size * 0.5, color: foreground),
     );
   }
 }
