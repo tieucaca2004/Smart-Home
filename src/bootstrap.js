@@ -9,6 +9,8 @@ const JsonFileStore = require('./storage/JsonFileStore');
 const SceneService = require('./services/sceneService');
 const AutomationService = require('./services/automationService');
 const AutomationScheduler = require('./services/AutomationScheduler');
+const RuleEngine = require('./automation/RuleEngine');
+const createDefaultRegistries = require('./automation/createDefaultRegistries');
 
 /** Where Scene/Automation records live: one JSON file each, next to the repo. */
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -43,8 +45,40 @@ function buildDeviceService() {
 }
 
 /**
+ * Reads the Hub's location (used only by sunrise/sunset conditions) from
+ * `HUB_LATITUDE` / `HUB_LONGITUDE` (decimal degrees). Returns
+ * `{latitude, longitude}`, or `null` if unset or invalid (with a warning for a
+ * half-set or invalid pair). A missing location never stops the Hub; it only
+ * means rules with a `sun` condition are rejected.
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {Console} [log]
+ * @returns {{latitude: number, longitude: number}|null}
+ */
+function readHubLocation(env = process.env, log = console) {
+  const rawLat = typeof env.HUB_LATITUDE === 'string' ? env.HUB_LATITUDE.trim() : '';
+  const rawLon = typeof env.HUB_LONGITUDE === 'string' ? env.HUB_LONGITUDE.trim() : '';
+  if (rawLat === '' && rawLon === '') return null;
+  if (rawLat === '' || rawLon === '') {
+    log.warn('[hub] Only one of HUB_LATITUDE / HUB_LONGITUDE is set; sunrise/sunset conditions are disabled.');
+    return null;
+  }
+  const latitude = Number(rawLat);
+  const longitude = Number(rawLon);
+  const valid =
+    Number.isFinite(latitude) && Number.isFinite(longitude) &&
+    latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
+  if (!valid) {
+    log.warn('[hub] HUB_LATITUDE / HUB_LONGITUDE are not valid coordinates; sunrise/sunset conditions are disabled.');
+    return null;
+  }
+  return { latitude, longitude };
+}
+
+/**
  * Wires the real, file-backed Scene and Automation services (Sprint 5),
- * plus the scheduler that evaluates "daily" automation triggers.
+ * plus the scheduler that evaluates "daily" automation triggers and, since
+ * Sprint 6, IF -> THEN rules through a RuleEngine.
  *
  * Persistence is two JSON files under data/ — no database server, matching
  * the rest of this project (Tuya itself is the device state; the Hub has
@@ -55,12 +89,16 @@ function buildDeviceService() {
  */
 function buildScenesAndAutomations(deviceService) {
   const sceneService = new SceneService(new JsonFileStore(path.join(DATA_DIR, 'scenes.json')), deviceService);
+  const location = readHubLocation();
+  const registries = createDefaultRegistries({ deviceService, sceneService });
   const automationService = new AutomationService(
     new JsonFileStore(path.join(DATA_DIR, 'automations.json')),
-    sceneService
+    sceneService,
+    { ...registries, location }
   );
-  const scheduler = new AutomationScheduler(automationService, sceneService);
-  return { sceneService, automationService, scheduler };
+  const ruleEngine = new RuleEngine({ deviceService, ...registries, location });
+  const scheduler = new AutomationScheduler(automationService, sceneService, { ruleEngine });
+  return { sceneService, automationService, scheduler, ruleEngine, location };
 }
 
-module.exports = { buildDeviceService, buildScenesAndAutomations };
+module.exports = { buildDeviceService, buildScenesAndAutomations, readHubLocation };

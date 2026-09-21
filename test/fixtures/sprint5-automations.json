@@ -1,0 +1,26 @@
+[
+  {
+    "id": "78cbc17d-b150-46b7-9698-4af5c1662408",
+    "name": "Test tu dong",
+    "enabled": true,
+    "trigger": {
+      "type": "daily",
+      "time": "16:55"
+    },
+    "sceneId": "55eb9b7d-5132-4876-8581-bdf7c3114f43",
+    "createdAt": "2026-09-20T09:54:41.766Z",
+    "updatedAt": "2026-09-20T09:55:37.548Z"
+  },
+  {
+    "id": "0f0e5c4a-2b7d-4c1e-9d55-3a1b7c0d9e01",
+    "name": "Mo quan 18:00",
+    "enabled": false,
+    "trigger": {
+      "type": "daily",
+      "time": "18:00"
+    },
+    "sceneId": "55eb9b7d-5132-4876-8581-bdf7c3114f43",
+    "createdAt": "2026-09-20T10:00:00.000Z",
+    "updatedAt": "2026-09-20T10:00:00.000Z"
+  }
+]

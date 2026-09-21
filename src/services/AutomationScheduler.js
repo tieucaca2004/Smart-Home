@@ -1,5 +1,7 @@
 'use strict';
 
+const { isLegacyAutomation } = require('../automation/schema');
+
 function pad2(n) {
   return String(n).padStart(2, '0');
 }
@@ -18,6 +20,11 @@ function minuteKey(date) {
  * Polls the automation list on a fixed interval and executes the scene of
  * any enabled "daily" automation whose time matches the current minute.
  *
+ * Sprint 6: if a `ruleEngine` option is given, the same tick also evaluates
+ * every enabled IF -> THEN rule (schema v2) through it. Legacy (Sprint 5)
+ * records keep their own untouched path below; without a `ruleEngine`, rules
+ * are simply ignored.
+ *
  * Two safety rules the brief calls out explicitly, both enforced here:
  *
  * 1. "Không chạy trùng cùng một automation trong cùng một tick": a
@@ -35,7 +42,7 @@ class AutomationScheduler {
   /**
    * @param {import('./automationService')} automationService
    * @param {import('./sceneService')} sceneService
-   * @param {{intervalMs?: number, now?: () => Date, log?: Console}} [options]
+   * @param {{intervalMs?: number, now?: () => Date, log?: Console, ruleEngine?: import('../automation/RuleEngine')}} [options]
    */
   constructor(automationService, sceneService, options = {}) {
     this.automationService = automationService;
@@ -43,6 +50,7 @@ class AutomationScheduler {
     this.intervalMs = options.intervalMs || 30000;
     this._now = options.now || (() => new Date());
     this._log = options.log || console;
+    this.ruleEngine = options.ruleEngine || null;
     this._timer = null;
     this._running = false;
     this._lastRunMinute = new Map(); // automationId -> minuteKey
@@ -80,7 +88,8 @@ class AutomationScheduler {
 
     let automations;
     try {
-      automations = await this.automationService.listAutomations();
+      // includeRules: the scheduler needs every record, rules included.
+      automations = await this.automationService.listAutomations({ includeRules: true });
     } catch (err) {
       this._log.error(`[automation-scheduler] could not list automations: ${err.message}`);
       return;
@@ -94,6 +103,27 @@ class AutomationScheduler {
 
       this._lastRunMinute.set(automation.id, currentMinuteKey);
       await this._runOne(automation);
+    }
+
+    await this._runRules(automations, now);
+  }
+
+  /** Evaluates every enabled rule (schema v2) once, sharing one device-read cache for the tick. */
+  async _runRules(automations, now) {
+    if (!this.ruleEngine) return;
+    const rules = automations.filter((a) => a && !isLegacyAutomation(a));
+    const enabled = rules.filter((a) => a.enabled);
+    // A disabled/deleted rule loses its edge state, so re-enabling counts as a fresh observation.
+    this.ruleEngine.retain(enabled.map((a) => a.id));
+    if (enabled.length === 0) return;
+
+    const tick = this.ruleEngine.newTick(now);
+    for (const rule of enabled) {
+      try {
+        await tick.runRule(rule);
+      } catch (err) {
+        this._log.error(`[automation-scheduler] rule "${rule.name}" (${rule.id}) failed: ${err.message}`);
+      }
     }
   }
 

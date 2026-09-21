@@ -345,6 +345,112 @@ Point it at the Hub with `--dart-define=HUB_BASE_URL=http://<hub-lan-ip>:3000`
 commands are in [`mobile/README.md`](mobile/README.md). The Hub is unchanged by
 the app: `npm test` and `npm run lint` do not touch `mobile/`.
 
+## Automation Engine (IF -> THEN)
+
+Automations live in `/api/automations` (stored in `data/automations.json`).
+Two record shapes share that endpoint:
+
+- **Legacy (Sprint 5)** - "at HH:MM every day, run this scene":
+  `{ name, enabled, trigger: {type: "daily", time: "18:00"}, sceneId }`.
+  Unchanged: same validation, same scheduler behaviour, stored records are never
+  migrated or rewritten by reading/listing/running them.
+- **Rule (Sprint 6, schema v2)** - a condition tree (`when`) and an action list
+  (`then`): `{ name, enabled, when: <condition>, then: [<action>, ...] }`. The
+  saved record also carries `schemaVersion: 2`. A payload must not mix the two
+  shapes (400).
+
+The engine (`src/automation/`) is protocol-agnostic: it reads device state only
+through `DeviceService.getDeviceStatus`, sends commands only through
+`DeviceService.sendCommand`, and runs scenes through `SceneService.executeScene`.
+It contains no Tuya code. **The rule author supplies the device-specific parts**
+(`deviceId`, `statusCode`, `functionCode`, `scale`, `equals`) - the engine never
+guesses what a status code means.
+
+### Conditions (`when`)
+
+| `type` | Shape | Meaning |
+|---|---|---|
+| `time` | `{type:"time", at:"HH:MM"}` or `{type:"time", from:"HH:MM", to:"HH:MM"}` | Hub local time. `at` = that exact minute. `from`-`to` = from inclusive, to exclusive; `from` later than `to` wraps past midnight (`22:00`-`06:00`). |
+| `temperature`, `humidity` | `{type, deviceId, statusCode, operator, value, scale?}` | `operator` is one of `> >= < <= == !=`. Compares `reading / 10^scale` (`scale` 0..6, default 0) with `value`. |
+| `device_state`, `motion`, `door` | `{type, deviceId, statusCode, equals}` | True when the reported value `===` `equals` (boolean, number or string). `equals` is what "door open" / "motion" looks like on *that* device. |
+| `sun` | `{type:"sun", event:"sunrise"|"sunset", relation:"at"|"after"|"before", offsetMinutes?}` | Needs the Hub location (below). `at` = that minute, `after` = until end of the local day, `before` = since start of the local day; `offsetMinutes` -180..180. |
+| `and`, `or` | `{type:"and"|"or", conditions:[...]}` | At least 1 child, nestable (max depth 5, max 30 nodes in total). Evaluated in order and short-circuited, so put cheap conditions (`time`) before sensors. |
+
+Every condition evaluates to `true`, `false` or **unknown** (`null`: the device is
+offline/unreadable, the status code is missing, no location for `sun`). `and`/`or`
+follow three-valued logic (`and`: any false -> false, else any unknown -> unknown;
+`or`: any true -> true, else any unknown -> unknown). **Unknown never triggers
+actions.**
+
+### Actions (`then`, 1 to 20, run in order)
+
+- `{type:"command", deviceId, functionCode, value}` - `value` is a boolean. The
+  Hub reads the status back and only reports success if the device shows the new
+  value. Several `command` entries = "multiple commands"; one failing does not
+  stop the rest.
+- `{type:"scene", sceneId}` - runs that scene (it must exist when you save).
+
+Each action ends as `success` (state confirmed by read-back), `pending` (command
+sent, but the read-back has not shown the new value yet - e.g. cloud propagation
+delay; logged as a normal line, not a failure) or `failed` (really failed, with a
+reason). After an unconfirmed immediate read the Hub waits once (2 s) and reads
+again - it never re-sends the command; total waiting is capped (10 s) per fired
+rule. Scenes run by `POST /api/scenes/:id/execute` or by the old (v1) automations
+keep the Sprint 5 behaviour.
+
+Example: "if the door opens, turn on lamp B; only 18:00-23:00":
+
+```json
+{
+  "name": "Door opens -> lamp B",
+  "enabled": true,
+  "when": { "type": "and", "conditions": [
+    { "type": "time", "from": "18:00", "to": "23:00" },
+    { "type": "door", "deviceId": "<protocol>:<door sensor id>", "statusCode": "<its status code>", "equals": true }
+  ] },
+  "then": [ { "type": "command", "deviceId": "<protocol>:<lamp B id>", "functionCode": "switch_1", "value": true } ]
+}
+```
+
+### How rules fire
+
+The scheduler evaluates enabled rules every 30 seconds (polling; no push from
+devices). Rules are **edge-triggered**: the `then` runs when the whole condition
+goes from false to true, not on every check while it stays true (so "door open" turns
+the lamp on once per opening, "temperature > 35 at noon" waters once). Consequences:
+
+- The first evaluation of a rule (Hub start, new rule, re-enabled, edited) only
+  records its state and does not fire - a restart while a door is open does
+  nothing. A `time.at` rule whose minute is the one the Hub starts in is missed.
+- Unknown values keep the last known state, so a brief offline period neither
+  fires nor re-arms a rule. It is logged once when it starts.
+- State is in memory only (nothing extra is written to disk). No cooldown.
+- A very short sensor pulse (< 30 s) can be missed by polling.
+
+### API additions
+
+- `GET /api/automations` returns **only legacy records** (exactly what Sprint 5
+  clients, including the current mobile app, can parse); `?include=all` returns
+  rules too. `GET /api/automations/:id` returns either kind.
+- `PUT` with a legacy-shaped body onto a rule -> **409** `AUTOMATION_SCHEMA_MISMATCH`
+  (an old client must not overwrite a rule). A rule-shaped `PUT` replaces a rule, or
+  deliberately upgrades a legacy record.
+- `POST /api/automations/:id/evaluate` - dry run: `{ automationId, result, tree }`
+  with `result` `true|false|null` and the per-condition tree. Reads live device
+  state but never runs an action or changes rule state.
+
+### Hub location (sunrise / sunset)
+
+Set `HUB_LATITUDE` and `HUB_LONGITUDE` (decimal degrees) in `.env`. Without them
+the Hub still runs, but rules containing a `sun` condition are rejected (400). Sunrise
+and sunset are computed in the Hub (no external service); the Hub's own local time zone
+is used for "the day", as for `time`.
+
+Adding a new kind of condition or action: write one evaluator/executor file under
+`src/automation/conditions/` or `src/automation/actions/` and register it in
+`src/automation/createDefaultRegistries.js`; nothing else changes. The mobile app has
+no editor for rules yet - create them through the API.
+
 ## Known limitations (deliberate — not oversights)
 
 - **Device discovery is new and has not been live-tested by this project.**

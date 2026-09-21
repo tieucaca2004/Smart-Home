@@ -7,6 +7,8 @@ const createAutomationsRouter = require('./routes/automations');
 const JsonFileStore = require('./storage/JsonFileStore');
 const SceneService = require('./services/sceneService');
 const AutomationService = require('./services/automationService');
+const RuleEngine = require('./automation/RuleEngine');
+const createDefaultRegistries = require('./automation/createDefaultRegistries');
 
 /**
  * Builds the Express app.
@@ -21,12 +23,21 @@ const AutomationService = require('./services/automationService');
  * existing call site (`createApp(deviceService)`) keeps working unchanged —
  * real, file-backed instances are only ever wired in src/bootstrap.js.
  *
+ * `ruleEngine` (Sprint 6) follows the same rule: optional, defaulting to an
+ * engine built on `deviceService` and the built-in condition/action registries
+ * (only the POST /api/automations/:id/evaluate dry run uses it here; the real,
+ * scheduler-driven engine is wired in src/bootstrap.js).
+ *
  * @param {import('./services/deviceService')} deviceService
- * @param {{sceneService?: import('./services/sceneService'), automationService?: import('./services/automationService')}} [extra]
+ * @param {{sceneService?: import('./services/sceneService'), automationService?: import('./services/automationService'), ruleEngine?: import('./automation/RuleEngine'), location?: ({latitude:number, longitude:number}|null)}} [extra]
  */
 function createApp(deviceService, extra = {}) {
   const sceneService = extra.sceneService || new SceneService(new JsonFileStore(), deviceService);
-  const automationService = extra.automationService || new AutomationService(new JsonFileStore(), sceneService);
+  const registries = createDefaultRegistries({ deviceService, sceneService });
+  const location = extra.location || null;
+  const automationService =
+    extra.automationService || new AutomationService(new JsonFileStore(), sceneService, { ...registries, location });
+  const ruleEngine = extra.ruleEngine || new RuleEngine({ deviceService, ...registries, location });
 
   const app = express();
   app.use(express.json());
@@ -35,7 +46,7 @@ function createApp(deviceService, extra = {}) {
 
   app.use('/api/devices', createDevicesRouter(deviceService));
   app.use('/api/scenes', createScenesRouter(sceneService));
-  app.use('/api/automations', createAutomationsRouter(automationService));
+  app.use('/api/automations', createAutomationsRouter(automationService, { ruleEngine }));
 
   // 404 fallback
   app.use((req, res) => {

@@ -8,8 +8,8 @@
     "start": "node --env-file=.env src/server.js",
     "lint": "eslint .",
     "test": "npm run test:unit && npm run test:api",
-    "test:unit": "node test/unit/tuyaAdapter.test.js && node test/unit/adapterRegistry.test.js && node test/unit/normalizeTuyaErrors.test.js && node test/unit/deviceService.test.js && node test/unit/tuyaCapabilities.test.js && node test/unit/deviceServiceCapabilities.test.js && node test/unit/startupEnv.test.js && node test/unit/tuyaDiscovery.test.js && node test/unit/sceneService.test.js && node test/unit/automationService.test.js && node test/unit/automationScheduler.test.js",
-    "test:api": "node test/api/devices.routes.test.js && node test/api/capabilities.routes.test.js && node test/api/discovery.routes.test.js && node test/api/scenes.routes.test.js && node test/api/automations.routes.test.js",
+    "test:unit": "node test/unit/tuyaAdapter.test.js && node test/unit/adapterRegistry.test.js && node test/unit/normalizeTuyaErrors.test.js && node test/unit/deviceService.test.js && node test/unit/tuyaCapabilities.test.js && node test/unit/deviceServiceCapabilities.test.js && node test/unit/startupEnv.test.js && node test/unit/tuyaDiscovery.test.js && node test/unit/sceneService.test.js && node test/unit/automationService.test.js && node test/unit/automationScheduler.test.js && node test/unit/conditionRegistry.test.js && node test/unit/timeCondition.test.js && node test/unit/sensorConditions.test.js && node test/unit/sunCondition.test.js && node test/unit/groupCondition.test.js && node test/unit/actions.test.js && node test/unit/ruleEngine.test.js && node test/unit/automationServiceRules.test.js && node test/unit/automationSchedulerRules.test.js && node test/unit/automationBackwardCompat.test.js",
+    "test:api": "node test/api/devices.routes.test.js && node test/api/capabilities.routes.test.js && node test/api/discovery.routes.test.js && node test/api/scenes.routes.test.js && node test/api/automations.routes.test.js && node test/api/automationRules.routes.test.js",
     "check-env": "node scripts/check-env.js"
   },
   "engines": {

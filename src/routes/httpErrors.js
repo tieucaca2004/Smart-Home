@@ -20,6 +20,8 @@ function statusCodeFor(err) {
     case 'SCENE_NOT_FOUND':
     case 'AUTOMATION_NOT_FOUND':
       return 404;
+    case 'AUTOMATION_SCHEMA_MISMATCH':
+      return 409;
     default:
       return 500;
   }
