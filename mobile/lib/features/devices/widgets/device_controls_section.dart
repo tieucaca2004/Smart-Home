@@ -226,15 +226,27 @@ class _ToggleTile extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        TextButton(
-          key: ValueKey('on-$code'),
-          onPressed: () => controller.setValue(code, true),
-          child: const Text('Bật'),
+        MergeSemantics(
+          child: Semantics(
+            label: functionLabel(function),
+            child: TextButton(
+              key: ValueKey('on-$code'),
+              style: TextButton.styleFrom(minimumSize: const Size(0, 48)),
+              onPressed: () => controller.setValue(code, true),
+              child: const Text('Bật'),
+            ),
+          ),
         ),
-        TextButton(
-          key: ValueKey('off-$code'),
-          onPressed: () => controller.setValue(code, false),
-          child: const Text('Tắt'),
+        MergeSemantics(
+          child: Semantics(
+            label: functionLabel(function),
+            child: TextButton(
+              key: ValueKey('off-$code'),
+              style: TextButton.styleFrom(minimumSize: const Size(0, 48)),
+              onPressed: () => controller.setValue(code, false),
+              child: const Text('Tắt'),
+            ),
+          ),
         ),
       ],
     );

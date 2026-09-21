@@ -11,6 +11,7 @@ import '../../models/device.dart';
 import '../../models/device_capabilities.dart';
 import 'device_kind.dart';
 import 'device_name_store.dart';
+import 'labels/function_labels.dart';
 import 'widgets/device_controls_section.dart';
 import 'widgets/device_icon_badge.dart';
 import 'widgets/online_badge.dart';
@@ -122,7 +123,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       for (final function in capabilities.commands)
         if (controlKindOf(function) == ControlKind.toggle) function,
     ];
-    if (controls.isEmpty) return const _NoControlsNote();
+    if (controls.isEmpty) return _NoControlsNote(capabilities: capabilities);
     return DeviceControlsSection(
       // A new key per capabilities load: reloading re-reads the status too.
       key: ObjectKey(capabilities),
@@ -233,27 +234,67 @@ class _LookupErrorBanner extends StatelessWidget {
 }
 
 /// Shown instead of the controls when the device lists no on/off command, so
-/// the screen does not look broken.
+/// the screen does not look broken. Below the fixed headline, a short second
+/// line — built only from the capabilities already loaded, never a new
+/// request — says the app still hears from the device, so "no controls"
+/// does not read as "the app can't reach this device".
 class _NoControlsNote extends StatelessWidget {
-  const _NoControlsNote();
+  const _NoControlsNote({required this.capabilities});
+
+  final DeviceCapabilities capabilities;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final onSurfaceVariant = theme.colorScheme.onSurfaceVariant;
+    final statusSummary = _statusSummary(capabilities);
     return SectionCard(
       padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.tune_rounded, size: 20, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Text(
-              'Thiết bị này chưa có điều khiển bật/tắt trong ứng dụng.',
-              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
+          Row(
+            children: [
+              Icon(Icons.tune_rounded, size: 20, color: onSurfaceVariant),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Text(
+                  'Thiết bị này chưa có điều khiển bật/tắt trong ứng dụng.',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: onSurfaceVariant),
+                ),
+              ),
+            ],
           ),
+          if (statusSummary != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Row(
+              children: [
+                // Lines up under the headline's text, past the icon above.
+                const SizedBox(width: 20 + AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    statusSummary,
+                    style: theme.textTheme.bodySmall?.copyWith(color: onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
+}
+
+/// A short "the app still hears from this device" line built from
+/// [DeviceCapabilities.statuses] — the codes the device reports, already
+/// loaded, protocol-neutral. Null when there is nothing meaningful to show
+/// (no statuses at all), rather than inventing a sentence.
+String? _statusSummary(DeviceCapabilities capabilities) {
+  final labels = <String>{for (final status in capabilities.statuses) functionLabel(status)}.toList();
+  if (labels.isEmpty) return null;
+  const shown = 3;
+  final remaining = labels.length - shown;
+  final list = remaining > 0 ? '${labels.take(shown).join(', ')} và $remaining mục khác' : labels.join(', ');
+  return 'Ứng dụng vẫn nhận được thông tin từ thiết bị: $list.';
 }

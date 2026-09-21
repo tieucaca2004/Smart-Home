@@ -21,6 +21,10 @@ class FakeHub {
 
   final Map<String, Future<http.Response> Function(http.Request request)> _postRoutes = {};
 
+  final Map<String, Future<http.Response> Function(http.Request request)> _putRoutes = {};
+
+  final Map<String, Future<http.Response> Function(http.Request request)> _deleteRoutes = {};
+
   /// Every GET request path seen so far, in order.
   final List<String> requests = [];
 
@@ -55,6 +59,26 @@ class FakeHub {
     _postRoutes[path] = (request) async {
       throw http.ClientException('Connection refused');
     };
+  }
+
+  /// Serves [body] as JSON with [status] for PUT [path].
+  void respondPut(String path, Object body, [int status = 200]) {
+    _putRoutes[path] = (request) async => jsonResponse(body, status);
+  }
+
+  /// Serves whatever [handler] produces for PUT [path].
+  void onPut(String path, Future<http.Response> Function(http.Request request) handler) {
+    _putRoutes[path] = handler;
+  }
+
+  /// Serves an empty `204 No Content` for DELETE [path].
+  void respondDelete(String path, [int status = 204]) {
+    _deleteRoutes[path] = (request) async => http.Response('', status);
+  }
+
+  /// Serves [body] as JSON with [status] for DELETE [path] (an error case).
+  void respondDeleteError(String path, Object body, int status) {
+    _deleteRoutes[path] = (request) async => jsonResponse(body, status);
   }
 
   /// Serves `GET .../status` and `POST .../commands` for [id] from an in-memory
@@ -106,18 +130,28 @@ class FakeHub {
     final mock = MockClient((request) async {
       final path = Uri.decodeComponent(request.url.path);
       calls.add('${request.method} $path');
-      if (request.method == 'POST') {
-        posts.add(request);
-        final post = _postRoutes[path];
-        if (post == null) return jsonResponse({'error': 'Not found'}, 404);
-        return post(request);
+      switch (request.method) {
+        case 'POST':
+          posts.add(request);
+          final post = _postRoutes[path];
+          if (post == null) return jsonResponse({'error': 'Not found'}, 404);
+          return post(request);
+        case 'PUT':
+          final put = _putRoutes[path];
+          if (put == null) return jsonResponse({'error': 'Not found'}, 404);
+          return put(request);
+        case 'DELETE':
+          final del = _deleteRoutes[path];
+          if (del == null) return jsonResponse({'error': 'Not found'}, 404);
+          return del(request);
+        default:
+          requests.add(path);
+          final handler = _routes[path];
+          if (handler == null) {
+            return jsonResponse({'error': 'Not found'}, 404);
+          }
+          return handler();
       }
-      requests.add(path);
-      final handler = _routes[path];
-      if (handler == null) {
-        return jsonResponse({'error': 'Not found'}, 404);
-      }
-      return handler();
     });
     return HubApiClient(
       baseUrl: Uri.parse('http://hub.test:3000'),

@@ -358,6 +358,23 @@ void main() {
 
       handle.dispose();
     });
+
+    testWidgets('the Bật/Tắt buttons for an unreported code carry the control\'s label too', (tester) async {
+      final handle = tester.ensureSemantics();
+      final (hub, _) = realHub(state: {'switch_1': false}); // switch_2 is never reported
+
+      await pumpDetail(tester, hub);
+      await tester.pumpAndSettle();
+
+      const label = 'Công tắc 2';
+      expect(tester.getSemantics(find.byKey(const ValueKey('on-switch_2'))).label, contains(label));
+      expect(tester.getSemantics(find.byKey(const ValueKey('off-switch_2'))).label, contains(label));
+      // Minimum touch target: 48dp tall.
+      expect(tester.getSize(find.byKey(const ValueKey('on-switch_2'))).height, greaterThanOrEqualTo(48));
+      expect(tester.getSize(find.byKey(const ValueKey('off-switch_2'))).height, greaterThanOrEqualTo(48));
+
+      handle.dispose();
+    });
   });
 
   group('offline device', () {

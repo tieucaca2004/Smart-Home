@@ -4,8 +4,8 @@ import 'core/branding.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_tokens.dart';
 import 'data/hub_api_client.dart';
-import 'features/devices/device_list_screen.dart';
 import 'features/devices/device_name_store.dart';
+import 'features/home_shell.dart';
 
 /// The app shell. The first screen is the device list.
 ///
@@ -24,7 +24,7 @@ class TieuHomeApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
-      home: DeviceListScreen(client: client, nameStore: nameStore),
+      home: HomeShell(client: client, nameStore: nameStore),
     );
   }
 }

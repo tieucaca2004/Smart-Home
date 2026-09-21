@@ -355,6 +355,58 @@ void main() {
       expect(find.byType(Switch), findsNothing);
     });
 
+    testWidgets('a device with no controls but real statuses says the app still hears from it', (tester) async {
+      final hub = FakeHub()
+        ..respond(capabilitiesPath, {
+          'id': realDeviceId,
+          'capabilities': {
+            'id': realDeviceId,
+            'protocol': 'tuya',
+            'nativeId': '1638018234ab950e1ecd',
+            'name': 'W-W603 2',
+            'online': true,
+            'commands': <Object>[],
+            'statuses': [
+              {'code': 'va_temperature', 'type': 'Integer', 'name': 'Nhiệt độ', 'values': <String, Object?>{}},
+              {'code': 'va_humidity', 'type': 'Integer', 'name': 'Độ ẩm', 'values': <String, Object?>{}},
+            ],
+          },
+        });
+
+      await pumpAt(tester, detailApp(hub));
+
+      // The fixed headline stays exactly as before (pinned test contract).
+      expect(find.text('Thiết bị này chưa có điều khiển bật/tắt trong ứng dụng.'), findsOneWidget);
+      // A short second line, built only from the already-loaded capabilities
+      // (no extra request — see hub.requests below), names what it does report.
+      expect(
+        find.text('Ứng dụng vẫn nhận được thông tin từ thiết bị: Nhiệt độ, Độ ẩm.'),
+        findsOneWidget,
+      );
+      expect(hub.requests, [capabilitiesPath]);
+    });
+
+    testWidgets('a device with no controls and no statuses at all shows only the fixed headline', (tester) async {
+      final hub = FakeHub()
+        ..respond(capabilitiesPath, {
+          'id': realDeviceId,
+          'capabilities': {
+            'id': realDeviceId,
+            'protocol': 'tuya',
+            'nativeId': '1638018234ab950e1ecd',
+            'name': 'W-W603 2',
+            'online': true,
+            'commands': <Object>[],
+            'statuses': <Object>[],
+          },
+        });
+
+      await pumpAt(tester, detailApp(hub));
+
+      expect(find.text('Thiết bị này chưa có điều khiển bật/tắt trong ứng dụng.'), findsOneWidget);
+      expect(find.textContaining('Ứng dụng vẫn nhận được'), findsNothing);
+    });
+
     testWidgets('the header shows the icon and the type of the device, not its raw category', (tester) async {
       final hub = realDeviceHub();
 

@@ -2,6 +2,11 @@
 
 const express = require('express');
 const createDevicesRouter = require('./routes/devices');
+const createScenesRouter = require('./routes/scenes');
+const createAutomationsRouter = require('./routes/automations');
+const JsonFileStore = require('./storage/JsonFileStore');
+const SceneService = require('./services/sceneService');
+const AutomationService = require('./services/automationService');
 
 /**
  * Builds the Express app.
@@ -11,15 +16,26 @@ const createDevicesRouter = require('./routes/devices');
  * real network access and no real credentials. The real, live-calling
  * TuyaAdapter is only ever wired in src/bootstrap.js, used by src/server.js.
  *
+ * `sceneService`/`automationService` (Sprint 5) are optional and default to
+ * fresh, in-memory-only instances built on top of `deviceService`, so every
+ * existing call site (`createApp(deviceService)`) keeps working unchanged —
+ * real, file-backed instances are only ever wired in src/bootstrap.js.
+ *
  * @param {import('./services/deviceService')} deviceService
+ * @param {{sceneService?: import('./services/sceneService'), automationService?: import('./services/automationService')}} [extra]
  */
-function createApp(deviceService) {
+function createApp(deviceService, extra = {}) {
+  const sceneService = extra.sceneService || new SceneService(new JsonFileStore(), deviceService);
+  const automationService = extra.automationService || new AutomationService(new JsonFileStore(), sceneService);
+
   const app = express();
   app.use(express.json());
 
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
   app.use('/api/devices', createDevicesRouter(deviceService));
+  app.use('/api/scenes', createScenesRouter(sceneService));
+  app.use('/api/automations', createAutomationsRouter(automationService));
 
   // 404 fallback
   app.use((req, res) => {

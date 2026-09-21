@@ -1,9 +1,17 @@
 'use strict';
 
+const path = require('path');
 const AdapterRegistry = require('./adapters/AdapterRegistry');
 const TuyaDiscoveryAdapter = require('./adapters/tuya/TuyaDiscoveryAdapter');
 const { wrapWithErrorNormalization } = require('./adapters/tuya/normalizeTuyaErrors');
 const DeviceService = require('./services/deviceService');
+const JsonFileStore = require('./storage/JsonFileStore');
+const SceneService = require('./services/sceneService');
+const AutomationService = require('./services/automationService');
+const AutomationScheduler = require('./services/AutomationScheduler');
+
+/** Where Scene/Automation records live: one JSON file each, next to the repo. */
+const DATA_DIR = path.join(__dirname, '..', 'data');
 
 /**
  * Wires the real adapters for actual (non-test) use.
@@ -34,4 +42,25 @@ function buildDeviceService() {
   return new DeviceService(registry);
 }
 
-module.exports = { buildDeviceService };
+/**
+ * Wires the real, file-backed Scene and Automation services (Sprint 5),
+ * plus the scheduler that evaluates "daily" automation triggers.
+ *
+ * Persistence is two JSON files under data/ — no database server, matching
+ * the rest of this project (Tuya itself is the device state; the Hub has
+ * never needed a DB). Scene/Automation records are small and few (a home's
+ * worth), so a JSON file read-on-load, written-on-mutation is enough.
+ *
+ * @param {DeviceService} deviceService
+ */
+function buildScenesAndAutomations(deviceService) {
+  const sceneService = new SceneService(new JsonFileStore(path.join(DATA_DIR, 'scenes.json')), deviceService);
+  const automationService = new AutomationService(
+    new JsonFileStore(path.join(DATA_DIR, 'automations.json')),
+    sceneService
+  );
+  const scheduler = new AutomationScheduler(automationService, sceneService);
+  return { sceneService, automationService, scheduler };
+}
+
+module.exports = { buildDeviceService, buildScenesAndAutomations };
