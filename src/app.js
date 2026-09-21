@@ -56,6 +56,14 @@ function createApp(deviceService, extra = {}) {
   // Generic error handler (routes catch their own errors; this is a safety net)
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
+    // express.json() failures never reach a route's own try/catch. Answer them with
+    // fixed texts only: no parser message, stack, path or echo of the request body.
+    if (err && err.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'Request body is not valid JSON', code: 'INVALID_JSON' });
+    }
+    if (err && err.type === 'entity.too.large') {
+      return res.status(413).json({ error: 'Request body is too large', code: 'PAYLOAD_TOO_LARGE' });
+    }
     res.status(500).json({ error: err.message });
   });
 
