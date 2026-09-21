@@ -50,11 +50,14 @@ Danh sách thành phần đã PASS và bị đóng băng. Chỉ Founder được
 | Sprint 5 Automation MVP | 2026-09-21 | PASS; real Scheduler execution verified; Sprint 6 may extend the approved automation extension points without refactoring unrelated frozen behavior |
 | Sprint 6 automation read-back fix (`src/automation/readBack.js`, `actions/commandAction.js`, `actions/sceneAction.js`, `ActionRegistry.js` — SUCCESS / PENDING / FAILED, một lần đọc lại có giới hạn, không gửi lại lệnh) | 2026-09-21 | Tester PASS + Reviewer PASS; delay thật đo được trên Hub + Tuya thật (mẫu nhỏ). Nhánh `pending` / `failed` trên phần cứng thật CHƯA được kiểm (chỉ unit test + mutation) |
 | Sprint 6 `failed (undefined)` logging fix (`src/automation/RuleEngine.js` — fallback lý do lỗi, sanitize dòng log kết quả action) | 2026-09-21 | Tester PASS + Reviewer PASS; log Hub thật không còn `undefined` |
+| Round B F-02 — SceneService confirmation fix (`src/services/sceneService.js`: một lần đọc lại có giới hạn cho step `UNCONFIRMED`, không gửi lại lệnh, thêm `status`/`verifiedAfterRetry` additive; bật qua `bootstrap.js` `{ readBack: {} }`) | 2026-09-21 | Tester PASS + Reviewer PASS (commit b61178c); chỉ kiểm bằng fake/mock + mutation. Nhánh `pending` / `failed` trên phần cứng thật CHƯA được kiểm và KHÔNG được freeze |
+| Round B F-05 — scene-only client timeout (`mobile/lib/data/hub_api_client.dart`: `sceneExecuteTimeout` mặc định 120 s chỉ cho `executeScene`; lệnh thiết bị giữ 10 s) | 2026-09-21 | Tester PASS + Reviewer PASS (commit b61178c). **120 s CHƯA được xác minh trên phần cứng thật** (suy ra từ tính toán trường hợp xấu nhất, không đo thời gian chạy scene thật) |
 
 **KHÔNG freeze / chưa xác minh trên phần cứng thật (Sprint 6):**
 - `sun` (sunrise/sunset): chỉ có unit test và đối chiếu thuật toán; chưa chạy trên Hub thật vì chưa cấu hình `HUB_LATITUDE` / `HUB_LONGITUDE`. UNFROZEN.
 - Cảm biến vật lý `temperature` / `humidity` / `motion` / `door`: chưa có phần cứng để test; chỉ có unit test với fake. UNFROZEN.
-- B1 (false `UNCONFIRMED` ở Sprint 5 `SceneService._confirm`, `POST /api/scenes/:id/execute`, log `partial failure` của legacy scheduler) vẫn mở, chưa sửa.
+- B1 / F-02: false `UNCONFIRMED` do độ trễ lan truyền đã được sửa ở Round B (xem hàng F-02 ở trên). Còn lại, chưa sửa và chưa freeze: step vẫn `pending` sau lần đọc lại vẫn hiện "thất bại một phần" trong app và log `partial failure` ở legacy scheduler; nhánh `pending` / `failed` trên phần cứng thật chưa kiểm.
+- Timeout 120 s của F-05 chưa xác minh trên phần cứng thật (đo thời gian chạy scene thật = NOT RUN).
 
 Sửa component trong bảng này chỉ được phép khi plan.md nêu rõ **bằng chứng lỗi trực tiếp** và Founder đã chấp thuận.
 
