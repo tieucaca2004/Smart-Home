@@ -20,6 +20,7 @@ class HubApiClient {
     required Uri baseUrl,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 10),
+    this.sceneExecuteTimeout = const Duration(seconds: 120),
   })  : _baseUrl = baseUrl,
         _client = httpClient ?? http.Client(),
         _ownsClient = httpClient == null;
@@ -28,8 +29,17 @@ class HubApiClient {
   final http.Client _client;
   final bool _ownsClient;
 
-  /// How long to wait for the Hub before giving up.
+  /// How long to wait for the Hub before giving up (every request except
+  /// [executeScene]).
   final Duration timeout;
+
+  /// How long [executeScene] waits for the Hub. The Hub runs a scene's actions
+  /// one after another (one command + one status read each, plus one shared
+  /// re-read delay), so its duration grows with the number of actions and must
+  /// not be cut off by the short [timeout] used for a single device call.
+  /// 120 s is derived, not measured: it covers the dead-device worst case up
+  /// to 15 actions (8 s each) and stays a safety net, not a guarantee.
+  final Duration sceneExecuteTimeout;
 
   /// The Hub address this client talks to (useful for error messages).
   Uri get baseUrl => _baseUrl;
@@ -131,7 +141,11 @@ class HubApiClient {
   /// every action; [SceneExecutionResult.success] says whether every one of
   /// them was confirmed — a 200 response is not itself a success signal.
   Future<SceneExecutionResult> executeScene(String id) async {
-    final body = await _postJson(['api', 'scenes', id, 'execute'], const <String, Object?>{});
+    final body = await _postJson(
+      ['api', 'scenes', id, 'execute'],
+      const <String, Object?>{},
+      timeout: sceneExecuteTimeout,
+    );
     return _parse('/api/scenes/:id/execute', () => SceneExecutionResult.fromJson(body));
   }
 
@@ -229,8 +243,8 @@ class HubApiClient {
 
   Future<Map<String, dynamic>> _getJson(List<String> segments) => _requestJson(segments, method: 'GET');
 
-  Future<Map<String, dynamic>> _postJson(List<String> segments, Object body) {
-    return _requestJson(segments, method: 'POST', body: body);
+  Future<Map<String, dynamic>> _postJson(List<String> segments, Object body, {Duration? timeout}) {
+    return _requestJson(segments, method: 'POST', body: body, timeout: timeout);
   }
 
   Future<Map<String, dynamic>> _putJson(List<String> segments, Object body) {
@@ -247,13 +261,21 @@ class HubApiClient {
     List<String> segments, {
     required String method,
     Object? body,
+    Duration? timeout,
   }) async {
     final uri = _uri(segments);
-    final response = await _send(uri, method: method, body: body);
+    final response = await _send(uri, method: method, body: body, timeout: timeout);
     return _decode(response, uri);
   }
 
-  Future<http.Response> _send(Uri uri, {required String method, Object? body}) async {
+  /// [timeout] overrides [HubApiClient.timeout] for this one request.
+  Future<http.Response> _send(
+    Uri uri, {
+    required String method,
+    Object? body,
+    Duration? timeout,
+  }) async {
+    final effectiveTimeout = timeout ?? this.timeout;
     final headers = <String, String>{
       'Accept': 'application/json',
       if (body != null) 'Content-Type': 'application/json',
@@ -267,11 +289,11 @@ class HubApiClient {
         'DELETE' => _client.delete(uri, headers: headers),
         _ => throw ArgumentError('Unsupported HTTP method: $method'),
       };
-      return await pending.timeout(timeout);
+      return await pending.timeout(effectiveTimeout);
     } on TimeoutException {
       throw HubApiException(
         HubApiErrorKind.timeout,
-        'No response from $uri within ${timeout.inSeconds}s',
+        'No response from $uri within ${effectiveTimeout.inSeconds}s',
       );
     } on http.ClientException catch (e) {
       throw HubApiException(HubApiErrorKind.network, '${e.message} ($uri)');

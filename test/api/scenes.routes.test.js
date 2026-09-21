@@ -14,6 +14,8 @@ const createApp = require('../../src/app');
 const AdapterRegistry = require('../../src/adapters/AdapterRegistry');
 const DeviceAdapter = require('../../src/adapters/DeviceAdapter');
 const DeviceService = require('../../src/services/deviceService');
+const SceneService = require('../../src/services/sceneService');
+const JsonFileStore = require('../../src/storage/JsonFileStore');
 
 const SIMULATED_ERRORS = { 'offline-device': 'DEVICE_OFFLINE' };
 
@@ -33,6 +35,43 @@ class FakeTuyaAdapter extends DeviceAdapter {
 
   async sendCommand(nativeId, code, value) {
     if (SIMULATED_ERRORS[nativeId]) throw Object.assign(new Error('simulated'), { appCode: SIMULATED_ERRORS[nativeId] });
+    return true;
+  }
+}
+
+/**
+ * Fake adapter with a propagation delay: after a command the new value only
+ * shows in status reads after `staleReads[nativeId]` stale reads. 'stuck'
+ * never shows it. Counts every command it receives.
+ */
+class LaggyAdapter extends DeviceAdapter {
+  constructor() {
+    super();
+    this.commands = [];
+    this._value = {};
+    this._stale = {};
+  }
+
+  get protocol() {
+    return 'lag';
+  }
+
+  async getDevices() {
+    return [];
+  }
+
+  async getDeviceStatus(nativeId) {
+    if (this._stale[nativeId] > 0) {
+      this._stale[nativeId] -= 1;
+      return [{ code: 'switch_1', value: false }];
+    }
+    return [{ code: 'switch_1', value: this._value[nativeId] === undefined ? false : this._value[nativeId] }];
+  }
+
+  async sendCommand(nativeId, code, value) {
+    this.commands.push([nativeId, code, value]);
+    this._value[nativeId] = value;
+    this._stale[nativeId] = nativeId === 'stuck' ? Number.MAX_SAFE_INTEGER : 1;
     return true;
   }
 }
@@ -212,6 +251,72 @@ async function run() {
   });
 
   await new Promise((resolve) => server.close(resolve));
+
+  // F-02: manual execution with the bounded re-verify enabled (as in production).
+  // A fake sleep records the wait and never really sleeps.
+  const lagRegistry = new AdapterRegistry();
+  const lagAdapter = new LaggyAdapter();
+  lagRegistry.register(lagAdapter);
+  lagRegistry.register(new FakeTuyaAdapter());
+  const lagDeviceService = new DeviceService(lagRegistry);
+  const delays = [];
+  const lagSceneService = new SceneService(new JsonFileStore(), lagDeviceService, {
+    readBack: { sleep: async (ms) => { delays.push(ms); } },
+  });
+  const lagServer = createApp(lagDeviceService, { sceneService: lagSceneService }).listen(0);
+  await new Promise((resolve) => lagServer.once('listening', resolve));
+
+  const createLagScene = async (name, actions) => (await requestJson(lagServer, 'POST', '/api/scenes', { name, actions })).body.scene;
+
+  await check('POST /api/scenes/:id/execute: a propagation delay is confirmed by the single re-read (200, success, verifiedAfterRetry); command sent once', async () => {
+    const scene = await createLagScene('Delayed', [{ deviceId: 'lag:fresh', functionCode: 'switch_1', value: true }]);
+    const before = lagAdapter.commands.length;
+    delays.length = 0;
+
+    const res = await requestJson(lagServer, 'POST', `/api/scenes/${scene.id}/execute`, {});
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.success, true);
+    assert.strictEqual(res.body.status, 'success');
+    assert.strictEqual(res.body.sceneId, scene.id);
+    assert.strictEqual(res.body.results[0].success, true);
+    assert.strictEqual(res.body.results[0].status, 'success');
+    assert.strictEqual(res.body.results[0].verifiedAfterRetry, true);
+    assert.ok(!('code' in res.body.results[0]) && !('error' in res.body.results[0]));
+    assert.strictEqual(lagAdapter.commands.length - before, 1);
+    assert.deepStrictEqual(delays, [2000]);
+  });
+
+  await check('POST /api/scenes/:id/execute: still stale after the re-read -> 200, success:false, status "pending", code UNCONFIRMED (legacy keys intact)', async () => {
+    const scene = await createLagScene('Stuck', [{ deviceId: 'lag:stuck', functionCode: 'switch_1', value: true }]);
+    const before = lagAdapter.commands.length;
+
+    const res = await requestJson(lagServer, 'POST', `/api/scenes/${scene.id}/execute`, {});
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.success, false);
+    assert.strictEqual(res.body.status, 'pending');
+    assert.strictEqual(res.body.results[0].success, false);
+    assert.strictEqual(res.body.results[0].code, 'UNCONFIRMED');
+    assert.strictEqual(res.body.results[0].status, 'pending');
+    for (const key of ['sceneId', 'sceneName', 'success', 'results']) assert.ok(key in res.body, key);
+    for (const key of ['deviceId', 'functionCode', 'value', 'success', 'error', 'code']) assert.ok(key in res.body.results[0], key);
+    assert.strictEqual(lagAdapter.commands.length - before, 1); // never re-sent
+  });
+
+  await check('POST /api/scenes/:id/execute: a real failure (offline) stays a 200 with status "failed" and code DEVICE_OFFLINE', async () => {
+    const scene = await createLagScene('Offline', [{ deviceId: 'tuya:offline-device', functionCode: 'switch_1', value: true }]);
+
+    const res = await requestJson(lagServer, 'POST', `/api/scenes/${scene.id}/execute`, {});
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.success, false);
+    assert.strictEqual(res.body.status, 'failed');
+    assert.strictEqual(res.body.results[0].status, 'failed');
+    assert.strictEqual(res.body.results[0].code, 'DEVICE_OFFLINE');
+  });
+
+  await new Promise((resolve) => lagServer.close(resolve));
 
   console.log(`\n${failCount === 0 ? '✅ PASS' : '❌ FAIL'} — ${passCount} passed, ${failCount} failed.`);
   if (failCount > 0) process.exitCode = 1;

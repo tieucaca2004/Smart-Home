@@ -1,6 +1,13 @@
 'use strict';
 
 const { randomUUID } = require('crypto');
+const {
+  normalizeVerifyOptions,
+  waitForRetry,
+  readStatus,
+  statusMatches,
+  UNCONFIRMED_CODE,
+} = require('../automation/readBack');
 
 /** Scene icon keys the Flutter app knows how to draw. Purely presentational. */
 const SCENE_ICONS = ['power-on', 'power-off', 'sun', 'moon', 'home', 'custom'];
@@ -25,6 +32,18 @@ function notFoundError(id) {
  * actually supports — that is checked for real at execute time, against
  * whatever adapter is registered, so this file has no protocol knowledge.
  */
+function stepStatus(step) {
+  if (step.success === true) return 'success';
+  return step.code === UNCONFIRMED_CODE ? 'pending' : 'failed';
+}
+
+/** Scene-level status: failed > pending > success. */
+function sceneStatus(results) {
+  if (results.some((r) => r.status === 'failed')) return 'failed';
+  if (results.some((r) => r.status === 'pending')) return 'pending';
+  return 'success';
+}
+
 function validateAction(action, index) {
   if (!action || typeof action !== 'object') {
     throw validationError(`actions[${index}] must be an object`);
@@ -77,10 +96,16 @@ class SceneService {
   /**
    * @param {import('../storage/JsonFileStore')} store
    * @param {import('./deviceService')} deviceService
+   * @param {{readBack?: {retryDelayMs?: number, sleep?: Function}}} [options]
+   *   `readBack` (opt-in): when given, a step whose immediate read-back is
+   *   stale is re-read once after one shared delay (see `_reverifyPending`).
+   *   Omitted -> immediate read-back only (the original behaviour).
    */
-  constructor(store, deviceService) {
+  constructor(store, deviceService, options = {}) {
     this.store = store;
     this.deviceService = deviceService;
+    const readBack = options && options.readBack;
+    this.readBack = readBack && typeof readBack === 'object' ? normalizeVerifyOptions(readBack) : null;
   }
 
   async listScenes() {
@@ -130,19 +155,75 @@ class SceneService {
    * value, unknown device...) never stops the rest: every action in the
    * scene is attempted, and the per-action outcome says exactly what
    * happened. The scene is reported successful only if every action was.
+   *
+   * The immediate read-back can still show the OLD value because a command
+   * takes a moment to propagate. When `options.readBack` is enabled, the
+   * unconfirmed steps are therefore re-read once after one shared delay
+   * (never re-sent). Steps and the scene also carry an additive `status`:
+   * success | pending (still UNCONFIRMED, not a failure) | failed
+   * (failed > pending > success at scene level).
    */
   async executeScene(id) {
     const scene = await this.getScene(id);
     const results = [];
     for (const action of scene.actions) {
-      results.push(await this._runAction(action));
+      results.push(this._withStatus(await this._runAction(action)));
     }
-    return {
+    const verifiedAfterRetry = this.readBack ? await this._reverifyPending(results) : false;
+    const result = {
       sceneId: scene.id,
       sceneName: scene.name,
       success: results.every((r) => r.success),
+      status: sceneStatus(results),
       results,
     };
+    if (verifiedAfterRetry) result.verifiedAfterRetry = true;
+    return result;
+  }
+
+  /** Adds the additive `status` field: success | pending (UNCONFIRMED) | failed. */
+  _withStatus(step) {
+    return { ...step, status: stepStatus(step) };
+  }
+
+  /**
+   * One shared wait, then ONE more status read per distinct device, for the
+   * steps whose immediate read-back did not show the new value (propagation
+   * delay). Never re-sends a command. A step that now matches becomes a
+   * success (`verifiedAfterRetry`); one that still does not (or whose read
+   * fails) stays pending / UNCONFIRMED - not a failure. Mutates `results`.
+   * @returns {Promise<boolean>} true when at least one step was confirmed here.
+   */
+  async _reverifyPending(results) {
+    const pending = results.filter((r) => r.status === 'pending');
+    if (pending.length === 0) return false;
+
+    await waitForRetry({
+      retryDelayMs: this.readBack.retryDelayMs,
+      sleep: this.readBack.sleep,
+      budget: null,
+    });
+
+    const reads = new Map();
+    for (const step of pending) {
+      if (!reads.has(step.deviceId)) {
+        reads.set(step.deviceId, await readStatus(this.deviceService, step.deviceId));
+      }
+    }
+
+    let confirmed = false;
+    for (const step of pending) {
+      const { status } = reads.get(step.deviceId);
+      if (status !== null && statusMatches(status, step.functionCode, step.value)) {
+        step.success = true;
+        step.status = 'success';
+        step.verifiedAfterRetry = true;
+        delete step.error;
+        delete step.code;
+        confirmed = true;
+      }
+    }
+    return confirmed;
   }
 
   async _runAction(action) {

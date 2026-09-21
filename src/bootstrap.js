@@ -93,7 +93,7 @@ function readHubLocation(env = process.env, log = console) {
  * @param {DeviceService} deviceService
  */
 function buildScenesAndAutomations(deviceService) {
-  const sceneService = new SceneService(new JsonFileStore(path.join(DATA_DIR, 'scenes.json')), deviceService);
+  const sceneService = new SceneService(new JsonFileStore(path.join(DATA_DIR, 'scenes.json')), deviceService, { readBack: {} });
   const location = readHubLocation();
   const registries = createDefaultRegistries({ deviceService, sceneService });
   const automationService = new AutomationService(
