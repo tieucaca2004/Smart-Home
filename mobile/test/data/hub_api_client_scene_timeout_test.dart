@@ -118,4 +118,21 @@ void main() {
       throwsA(_timeout().having((e) => e.message, 'message', contains('within 1s'))),
     );
   });
+
+  // Round C / F-04 (Founder item 7): apiToken must not interact with or
+  // override the F-05 timeout fields — an explicit apiToken alongside
+  // explicit custom timeout/sceneExecuteTimeout values must leave those
+  // values exactly as given.
+  test('an apiToken alongside explicit custom timeouts leaves those timeouts unchanged', () {
+    final client = HubApiClient(
+      baseUrl: Uri.parse('http://hub.test:3000'),
+      apiToken: 'secret-token',
+      timeout: const Duration(seconds: 7),
+      sceneExecuteTimeout: const Duration(seconds: 42),
+    );
+
+    expect(client.apiToken, 'secret-token');
+    expect(client.timeout, const Duration(seconds: 7));
+    expect(client.sceneExecuteTimeout, const Duration(seconds: 42));
+  });
 }

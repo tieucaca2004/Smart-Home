@@ -21,6 +21,7 @@ class HubApiClient {
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 10),
     this.sceneExecuteTimeout = const Duration(seconds: 120),
+    this.apiToken = const String.fromEnvironment('HUB_API_TOKEN'),
   })  : _baseUrl = baseUrl,
         _client = httpClient ?? http.Client(),
         _ownsClient = httpClient == null;
@@ -40,6 +41,15 @@ class HubApiClient {
   /// 120 s is derived, not measured: it covers the dead-device worst case up
   /// to 15 actions (8 s each) and stays a safety net, not a guarantee.
   final Duration sceneExecuteTimeout;
+
+  /// Optional shared bearer token for the Hub's REST API (Round C / F-04).
+  /// Defaults to the compile-time `HUB_API_TOKEN` dart-define (empty string
+  /// when not passed to the build, e.g. `--dart-define=HUB_API_TOKEN=...`).
+  /// Empty (default) -> no `Authorization` header is sent, exactly as
+  /// before. Non-empty -> every request sends `Authorization: Bearer
+  /// $apiToken`. Purely compile-time, like [baseUrl]; there is no in-app UI
+  /// to view/edit it.
+  final String apiToken;
 
   /// The Hub address this client talks to (useful for error messages).
   Uri get baseUrl => _baseUrl;
@@ -279,6 +289,7 @@ class HubApiClient {
     final headers = <String, String>{
       'Accept': 'application/json',
       if (body != null) 'Content-Type': 'application/json',
+      if (apiToken.isNotEmpty) 'Authorization': 'Bearer $apiToken',
     };
     try {
       final encoded = body == null ? null : jsonEncode(body);

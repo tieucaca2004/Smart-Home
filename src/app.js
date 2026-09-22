@@ -9,6 +9,7 @@ const SceneService = require('./services/sceneService');
 const AutomationService = require('./services/automationService');
 const RuleEngine = require('./automation/RuleEngine');
 const createDefaultRegistries = require('./automation/createDefaultRegistries');
+const createAuthMiddleware = require('./middleware/authToken');
 
 /**
  * Builds the Express app.
@@ -28,8 +29,13 @@ const createDefaultRegistries = require('./automation/createDefaultRegistries');
  * (only the POST /api/automations/:id/evaluate dry run uses it here; the real,
  * scheduler-driven engine is wired in src/bootstrap.js).
  *
+ * `hubApiToken` (Round C / F-04) is optional and defaults to unset, in which
+ * case every `/api/*` route behaves exactly as before (no auth). When set, a
+ * request to `/api/*` must carry `Authorization: Bearer <hubApiToken>`;
+ * `/health` stays open either way (liveness probe). See src/middleware/authToken.js.
+ *
  * @param {import('./services/deviceService')} deviceService
- * @param {{sceneService?: import('./services/sceneService'), automationService?: import('./services/automationService'), ruleEngine?: import('./automation/RuleEngine'), location?: ({latitude:number, longitude:number}|null)}} [extra]
+ * @param {{sceneService?: import('./services/sceneService'), automationService?: import('./services/automationService'), ruleEngine?: import('./automation/RuleEngine'), location?: ({latitude:number, longitude:number}|null), hubApiToken?: string}} [extra]
  */
 function createApp(deviceService, extra = {}) {
   const sceneService = extra.sceneService || new SceneService(new JsonFileStore(), deviceService);
@@ -38,11 +44,14 @@ function createApp(deviceService, extra = {}) {
   const automationService =
     extra.automationService || new AutomationService(new JsonFileStore(), sceneService, { ...registries, location });
   const ruleEngine = extra.ruleEngine || new RuleEngine({ deviceService, ...registries, location });
+  const authMiddleware = createAuthMiddleware({ token: extra.hubApiToken });
 
   const app = express();
   app.use(express.json());
 
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+  app.use('/api', authMiddleware);
 
   app.use('/api/devices', createDevicesRouter(deviceService));
   app.use('/api/scenes', createScenesRouter(sceneService));

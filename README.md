@@ -308,8 +308,13 @@ unchanged whenever an adapter provides one — `TuyaAdapter` doesn't populate
 
 The app talks **only** to this Hub's REST API over HTTP/JSON — never to Tuya
 directly, and never holding any Tuya credential (those live only in the Hub's
-`.env`). There is no auth and no TLS in the Hub today, so run it on a trusted
-network (or behind something that adds both) until that's built. A sensible
+`.env`). There is no TLS in the Hub today. Auth is **optional** (Round C /
+F-04): set `HUB_API_TOKEN` in the Hub's `.env` and every `/api/*` request must
+carry `Authorization: Bearer <token>` (`/health` stays open for liveness
+checks); leave it unset and `/api/*` requires no auth, exactly as before. The
+app sends the token via `--dart-define=HUB_API_TOKEN=...` at build time — see
+`HubApiClient`'s `apiToken` field. Either way, still run the Hub on a trusted
+network (or behind something that adds TLS) until that's built. A sensible
 client flow using only what exists now:
 
 1. **Discover** — `GET /api/devices` → list of `{ id, name, category, online, ... }`.
@@ -481,15 +486,16 @@ no editor for rules yet - create them through the API.
   path without URL-encoding it (frozen baseline code, deliberately not changed
   this sprint). Because Express decodes `%2F` in `:id`, a crafted id can alter
   the path of an authenticated Tuya request. The new `getDeviceCapabilities`
-  does URL-encode it. Combined with there being no auth on the hub (below),
+  does URL-encode it. Combined with the hub's auth being optional (below),
   don't expose the hub beyond a trusted network. Fixing the frozen methods is
   a candidate for a future sprint.
 - Only the Tuya adapter exists. Matter/Zigbee/MQTT/IR/RF are structural
   placeholders (see `src/bootstrap.js` comments) — no code for them yet, as
   requested.
 - No web frontend (the Flutter app in `mobile/` is the only client), no
-  persistence/database, no auth, no push/real-time updates — out of scope for
-  this step. Clients must poll `/status`.
+  persistence/database, no push/real-time updates — out of scope for this
+  step. Clients must poll `/status`. Auth is optional (see "How a future
+  mobile app should talk to the Hub" above): `HUB_API_TOKEN`.
 
 ## Setup
 

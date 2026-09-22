@@ -224,6 +224,28 @@ async function run() {
     assert.match(res.stderr, /Missing Tuya credentials/);
   });
 
+  // ---- Round C / F-04: optional HUB_HOST bind (regression + positive control) ----
+
+  await check('HUB_HOST unset: the Hub is still reachable at 127.0.0.1:<port> (regression, unchanged behavior)', async () => {
+    const port = await freePort();
+    const res = await runHub({
+      args: startArgs(),
+      envFileContent: [`PORT=${port}`, ...DUMMY_CREDENTIALS, ''].join('\n'),
+      expectPort: port,
+    });
+    assert.strictEqual(res.healthy, true, `Hub did not come up: exit=${res.exitCode} stderr=${res.stderr}`);
+  });
+
+  await check('HUB_HOST=127.0.0.1 set: the Hub is reachable at 127.0.0.1:<port> (positive control, value is used)', async () => {
+    const port = await freePort();
+    const res = await runHub({
+      args: startArgs(),
+      envFileContent: [`PORT=${port}`, `HUB_HOST=127.0.0.1`, ...DUMMY_CREDENTIALS, ''].join('\n'),
+      expectPort: port,
+    });
+    assert.strictEqual(res.healthy, true, `Hub did not come up: exit=${res.exitCode} stderr=${res.stderr}`);
+  });
+
   console.log(`\n${failCount === 0 ? '✅ PASS' : '❌ FAIL'} — ${passCount} passed, ${failCount} failed.`);
   if (failCount > 0) process.exitCode = 1;
 }
